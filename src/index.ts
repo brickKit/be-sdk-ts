@@ -14,6 +14,6 @@ export type { Module } from "./module.js";
 export { bootstrap, runStandalone } from "./standalone.js";
 export { newGraphQLServer, type GraphQLServerOptions } from "./graphqlServer.js";
 export { createBatchGetLoader } from "./dataloader.js";
-export { PUBLIC, requirePermission, type PermKey } from "./authz.js";
+export { PUBLIC, AUTHENTICATED, requirePermission, type PermKey } from "./authz.js";
 export { scopeOf, type ScopeFilter } from "./scope.js";
 export { userClient, systemClient } from "./client.js";

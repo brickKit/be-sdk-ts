@@ -110,6 +110,13 @@ export async function runStandalone(
     httpPort: ports.httpPort,
   };
 
+  // 阶段三 Task 5：装配 JWT 验签器 + bundle 轮询，须在 newModule(rt) 之前
+  // ——resolver 一旦挂上 requirePermission 就可能立刻被调用，authzRuntime
+  // 必须先就位（同 Go/Python 版 RunStandalone/run_standalone 的顺序）。
+  const { setAuthzRuntime, setupAuthzRuntime } = await import("./authz.js");
+  const { verifier, bundle } = setupAuthzRuntime(rt);
+  setAuthzRuntime(verifier, bundle);
+
   const mod = await newModule(rt);
 
   const controller = new AbortController();
