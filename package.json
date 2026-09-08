@@ -1,0 +1,37 @@
+{
+  "name": "@brickkit/be-sdk-ts",
+  "version": "0.1.0",
+  "description": "be-sdk-ts：TypeScript 横切基础库（总纲 §4 SOP-L，只有一半能力）。非 brickKit 组件，非公共 model 包",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "graphql": "17.0.2",
+    "graphql-yoga": "5.22.0",
+    "@graphql-tools/schema": "10.1.1",
+    "@graphql-yoga/plugin-persisted-operations": "3.22.0",
+    "@escape.tech/graphql-armor": "3.2.0",
+    "dataloader": "2.2.3",
+    "@grpc/grpc-js": "1.14.4",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/sdk-node": "0.222.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@prometheus-io/client": "0.16.1",
+    "pino": "10.3.1"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.7",
+    "tsx": "4.23.13",
+    "@types/node": "22.19.0"
+  }
+}
