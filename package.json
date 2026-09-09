@@ -1,6 +1,6 @@
 {
   "name": "@brickkit/be-sdk-ts",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "be-sdk-ts：TypeScript 横切基础库（总纲 §4 SOP-L，只有一半能力）。非 brickKit 组件，非公共 model 包",
   "license": "Apache-2.0",
   "type": "module",
