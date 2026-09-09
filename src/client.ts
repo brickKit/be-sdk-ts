@@ -9,11 +9,24 @@
  *
  * ⚠️ 与 Go 版 `(*grpc.ClientConn, error)`/Python 版 `Channel` 的另一处
  * 差异：`@grpc/grpc-js` 生成的客户端 stub 构造函数签名是
- * `new GeneratedClient(target, credentials)`——它要**目标地址和凭据
- * 两样东西**，不像 Go/Python 的客户端库把两者拼进一个连接对象里就
- * 结束。所以这里返回 `{ target, credentials }`，调用方（vendor 生成的
- * 客户端 stub）自己 `new`。两个函数返回同一种形状，不因为
- * 透不透传身份而长得不一样。
+ * `new GeneratedClient(target, credentials, options?)`——它要
+ * **目标地址、凭据、可选项三样东西**，不像 Go/Python 的客户端库把它们
+ * 拼进一个连接对象里就结束。所以这里返回 `{ target, credentials,
+ * options }`，调用方（vendor 生成的客户端 stub）自己 `new`。
+ *
+ * ⚠️⚠️ **真机踩过的一处真实 bug，记在这里免得又被改回去**：最初
+ * `userClient` 用 `grpc.credentials.createFromMetadataGenerator` 造一份
+ * `CallCredentials`，再 `combineChannelCredentials(createInsecure(),
+ * callCredentials)` 想把身份塞进凭据里——`infra-bff-mobile` 第一次真的
+ * 调 mdm-customer 时直接抛 `Error: Cannot compose insecure
+ * credentials`。根因：`@grpc/grpc-js` 的 `InsecureChannelCredentialsImpl.
+ * compose()` **硬编码抛异常**（`channel-credentials.ts`），这是故意的
+ * 安全防线——调用凭据（往往带敏感 token）不该被允许绑在未加密通道上，
+ * 不是版本 bug、也不会有配置项能关掉。Python 版的 `client.py` 从一开始
+ * 就没踩这个坑，因为它用的是 `UnaryUnaryClientInterceptor`（拦一次每条
+ * 出站调用，往 metadata 里加一个头），根本不经过 ChannelCredentials 这
+ * 条路——现在改成对应的 grpc-js **Interceptor**（`ClientOptions.
+ * interceptors`），三份 SDK 的心智模型重新对齐。
  */
 
 import * as grpc from "@grpc/grpc-js";
@@ -24,6 +37,22 @@ const AUTH_HEADER_KEY = "authorization";
 export interface ClientDialOptions {
   target: string;
   credentials: grpc.ChannelCredentials;
+  options: grpc.ClientOptions;
+}
+
+/** 把 `auth` 写进每一次出站调用的 metadata——不经过 ChannelCredentials，见上方模块文档。 */
+function forwardAuthInterceptor(auth: string): grpc.Interceptor {
+  return (options, nextCall) => {
+    const requester: grpc.Requester = {
+      start(metadata, listener, next) {
+        if (auth) {
+          metadata.add(AUTH_HEADER_KEY, auth);
+        }
+        next(metadata, listener);
+      },
+    };
+    return new grpc.InterceptingCall(nextCall(options), requester);
+  };
 }
 
 /**
@@ -40,21 +69,10 @@ export function userClient(auth: string, dep: string, extra = ""): ClientDialOpt
   if (!ok) {
     throw new Error(`besdk.userClient: 依赖 ${dep} 的地址未注入`);
   }
-  const callCredentials = grpc.credentials.createFromMetadataGenerator(
-    (_options, callback) => {
-      const metadata = new grpc.Metadata();
-      if (auth) {
-        metadata.set(AUTH_HEADER_KEY, auth);
-      }
-      callback(null, metadata);
-    },
-  );
   return {
     target,
-    credentials: grpc.credentials.combineChannelCredentials(
-      grpc.credentials.createInsecure(),
-      callCredentials,
-    ),
+    credentials: grpc.credentials.createInsecure(),
+    options: { interceptors: [forwardAuthInterceptor(auth)] },
   };
 }
 
@@ -68,5 +86,5 @@ export function systemClient(dep: string, extra = ""): ClientDialOptions {
   if (!ok) {
     throw new Error(`besdk.systemClient: 依赖 ${dep} 的地址未注入`);
   }
-  return { target, credentials: grpc.credentials.createInsecure() };
+  return { target, credentials: grpc.credentials.createInsecure(), options: {} };
 }
