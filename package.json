@@ -1,6 +1,6 @@
 {
   "name": "@brickkit/be-sdk-ts",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "be-sdk-ts：TypeScript 横切基础库（总纲 §4 SOP-L，只有一半能力）。非 brickKit 组件，非公共 model 包",
   "license": "Apache-2.0",
   "type": "module",
@@ -24,6 +24,10 @@
     "@grpc/grpc-js": "1.14.4",
     "@opentelemetry/api": "1.9.1",
     "@opentelemetry/sdk-node": "0.222.0",
+    "@opentelemetry/sdk-trace": "2.11.0",
+    "@opentelemetry/context-async-hooks": "2.11.0",
+    "@opentelemetry/resources": "2.11.0",
+    "@opentelemetry/semantic-conventions": "1.43.0",
     "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
     "@prometheus-io/client": "0.16.1",
     "pino": "10.3.1",
