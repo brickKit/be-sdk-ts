@@ -163,7 +163,7 @@ describe("newGraphQLServer", () => {
     // 是"原生"GraphQLError，不会被 maskedErrors 替换掉——客户端应该
     // 看得到真实原因，"你没有权限"不是要隐藏的内部错误（authz.ts 里
     // 写清楚了这条判据）。
-    // ⚠️ 阶段三 Task 5 之后：这里测的 fakeRuntime 没有配 iamJwksUrl，
+    // ⚠️ 阶段三 Task 5 之后：这里测的 fakeRuntime 没有配 IAM_JWKS_URL，
     // requirePermission 退化成阶段二遗留的 fail-closed stub——消息文本
     // 与 be-sdk-go/be-sdk-python 同一路径的措辞对应，见 authz.ts。
     expect(secretJson.errors).toBeDefined();

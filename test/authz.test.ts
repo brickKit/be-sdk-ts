@@ -83,7 +83,7 @@ describe("requirePermission", () => {
     }
   });
 
-  describe("配置了 iamJwksUrl 之后", () => {
+  describe("配置了 IAM_JWKS_URL 之后", () => {
     let jwks: FakeJWKS;
 
     afterEach(async () => {
@@ -138,7 +138,7 @@ describe("requirePermission", () => {
     it("验签通过但 bundle 从没连上过：具体权限键 503（不是 403）", async () => {
       jwks = await startFakeJWKS();
       const { JWTVerifier } = await import("../src/jwtVerify.js");
-      setAuthzRuntime(new JWTVerifier(jwks.url), null); // bundle 为 null，等价于"没配 authzBundleUrl"
+      setAuthzRuntime(new JWTVerifier(jwks.url), null); // bundle 为 null，等价于"没配 AUTHZ_BUNDLE_URL"
       const token = await jwks.sign({ sub: "u1", roles: ["sales_rep"] });
 
       const result = await callResolver("erp.sales.view", fakeContext(`Bearer ${token}`));
@@ -248,7 +248,7 @@ describe("setupAuthzRuntime", () => {
     expect(bundle).toBeNull();
   });
 
-  it("配了 iamJwksUrl/authzBundleUrl 之后两者都非 null", async () => {
+  it("配了 IAM_JWKS_URL/AUTHZ_BUNDLE_URL 之后两者都非 null", async () => {
     const jwks = await startFakeJWKS();
     try {
       const { verifier, bundle } = setupAuthzRuntime({

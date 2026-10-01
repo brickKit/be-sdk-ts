@@ -4,37 +4,7 @@
  * 模块读配置的唯一入口（设计书 §12.5.3）。模块代码里零 `process.env`。
  */
 
-/**
- * 把 configSchema 属性名（camelCase，如 `pgSchema`）转成平台注入环境
- * 变量时真正用的名字（SCREAMING_SNAKE_CASE，如 `PG_SCHEMA`）。
- *
- * ⚠️ 这是移植自 be-sdk-go 的一个真实存在过的 bug 的修复：Go 版 `Config`
- * 的全部 getter 曾经直接拿调用方传的 camelCase 字符串去查，而查询用的
- * map 的 key 是平台装配阶段转换后的真实进程环境变量名，两边从来没对上
- * 过。四个已发布组件因默认值恰好等于真实值而未暴露五个版本——**本仓库
- * 从第一个提交起就实现对，不重犯**（阶段三计划 Task 1/2 明确要求）。
- *
- * 转换算法与 Go/Python 版逐字对应，且对已经是 SCREAMING_SNAKE_CASE 的
- * 输入是幂等的。
- */
-export function configEnvVarName(key: string): string {
-  let out = "";
-  for (let i = 0; i < key.length; i++) {
-    const ch = key[i]!;
-    if (ch === "-" || ch === "." || ch === " ") {
-      out += "_";
-    } else if (ch >= "A" && ch <= "Z") {
-      const prev = i > 0 ? key[i - 1]! : "";
-      if (i > 0 && (/[a-z0-9]/.test(prev))) {
-        out += "_";
-      }
-      out += ch;
-    } else {
-      out += ch.toUpperCase();
-    }
-  }
-  return out;
-}
+import { envName } from "./endpoint.js";
 
 export class Config {
   private readonly values: Readonly<Record<string, string>>;
@@ -43,8 +13,9 @@ export class Config {
     this.values = { ...values };
   }
 
+  /** 精确匹配键名（UPPER_SNAKE 环境变量名），不做任何大小写/驼峰转换。 */
   string(key: string): { value: string; ok: boolean } {
-    const v = this.values[configEnvVarName(key)];
+    const v = this.values[key];
     return v === undefined ? { value: "", ok: false } : { value: v, ok: true };
   }
 
@@ -89,5 +60,30 @@ export class Config {
   boolOr(key: string, defaultValue: boolean): boolean {
     const { value, ok } = this.bool(key);
     return ok ? value : defaultValue;
+  }
+
+  /**
+   * 从 Config 读 `<ID>[_<PORT>]_ENDPOINT` 并剥掉 scheme 与结尾斜杠。
+   *
+   * ⚠️ 绝不回落到 process.env（合并态下一个进程只有一份 environ，设计书
+   * §12.5.3）；键缺失与值为空都视为缺失。
+   */
+  endpoint(dep: string, extra = ""): { value: string; ok: boolean } {
+    const { value, ok } = this.string(envName(dep, extra));
+    if (!ok || value === "") return { value: "", ok: false };
+    return { value: value.replace(/^https?:\/\//, "").replace(/\/$/, ""), ok: true };
+  }
+
+  /** 用于强依赖：缺失即抛异常（强依赖缺失时平台本来就会阻断启动）。 */
+  mustEndpoint(dep: string, extra = ""): string {
+    const { value, ok } = this.endpoint(dep, extra);
+    if (!ok) throw new Error(`强依赖 ${dep} 的 ${envName(dep, extra)} 未注入`);
+    return value;
+  }
+
+  /** 读 `S3_URL`（完整 URL，含 scheme，原样返回，不剥不加）。 */
+  s3Url(): { value: string; ok: boolean } {
+    const { value, ok } = this.string("S3_URL");
+    return ok && value !== "" ? { value, ok: true } : { value: "", ok: false };
   }
 }

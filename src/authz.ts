@@ -78,7 +78,7 @@ function forbidden(message: string): never {
 /**
  * 权限判定的进程级状态——由 `runStandalone` 在启动时装配一次（同
  * otel provider 那一类"只能有一份"的东西，设计书 §12.5.2）。两者任一
- * 为 `null` 都代表这个组件没配 `iamJwksUrl`/`authzBundleUrl`，此时任何
+ * 为 `null` 都代表这个组件没配 `IAM_JWKS_URL`/`AUTHZ_BUNDLE_URL`，此时任何
  * 非 `PUBLIC` 权限键一律 fail-closed 403——这是阶段二遗留的默认状态，
  * 阶段三给这两项配置赋值之前，行为不变。
  */
@@ -92,7 +92,7 @@ export function setAuthzRuntime(verifier: JWTVerifier | null, bundle: BundleCach
 }
 
 /**
- * 从 `rt.config` 读 `iamJwksUrl`/`authzBundleUrl`，装配 JWT 验签器与
+ * 从 `rt.config` 读 `IAM_JWKS_URL`/`AUTHZ_BUNDLE_URL`，装配 JWT 验签器与
  * bundle 轮询——`runStandalone` 专用，模块代码不调用。两项配置任一
  * 缺失都返回 `null`，调用方（`requirePermission`）据此退化成
  * fail-closed stub，不阻断组件启动（§14.1.9：authz 不可达不该拖累
@@ -104,7 +104,7 @@ export function setupAuthzRuntime(
   const logger = rt.logger;
 
   let verifier: JWTVerifier | null = null;
-  const { value: jwksUrl, ok: hasJwksUrl } = rt.config.string("iamJwksUrl");
+  const { value: jwksUrl, ok: hasJwksUrl } = rt.config.string("IAM_JWKS_URL");
   if (hasJwksUrl && jwksUrl !== "") {
     try {
       verifier = new JWTVerifier(jwksUrl);
@@ -114,15 +114,15 @@ export function setupAuthzRuntime(
       logger.error({ err }, "初始化 JWT 验签器失败，非 PUBLIC/AUTHENTICATED 权限键将 fail-closed");
     }
   } else {
-    logger.info("未配置 iamJwksUrl，非 PUBLIC/AUTHENTICATED 权限键将 fail-closed（阶段二遗留行为）");
+    logger.info("未配置 IAM_JWKS_URL，非 PUBLIC/AUTHENTICATED 权限键将 fail-closed（阶段二遗留行为）");
   }
 
   let bundle: BundleCache | null = null;
-  const { value: bundleUrl, ok: hasBundleUrl } = rt.config.string("authzBundleUrl");
+  const { value: bundleUrl, ok: hasBundleUrl } = rt.config.string("AUTHZ_BUNDLE_URL");
   if (hasBundleUrl && bundleUrl !== "") {
     bundle = startBundlePoller(bundleUrl, logger);
   } else {
-    logger.info("未配置 authzBundleUrl，具体权限键判定将始终 503");
+    logger.info("未配置 AUTHZ_BUNDLE_URL，具体权限键判定将始终 503");
   }
 
   return { verifier, bundle };
@@ -154,7 +154,7 @@ function isStale(claims: Claims, bundle: BundleCache | null): boolean {
  *
  * 1. `PUBLIC`：直接放行，不验签——`/healthz` 这类必须匿名可达的端点
  *    靠这条（GraphQL 侧对应"这个字段谁都能查"）。
- * 2. 验签 JWT（本地，JWKS 从 `iamJwksUrl` 来）；没配置时退化成阶段二
+ * 2. 验签 JWT（本地，JWKS 从 `IAM_JWKS_URL` 来）；没配置时退化成阶段二
  *    的 fail-closed stub：非 `PUBLIC` 一律 403，行为对已经写好、还没
  *    升级 configSchema 的组件保持不变。
  * 3. `jwt.iat < stale_since[sub]` → 401 `token_stale`（有界列表，
@@ -175,7 +175,7 @@ export function requirePermission<TSource, TContext, TArgs>(
     if (authzVerifier === null) {
       // 阶段二遗留的 fail-closed stub：没有真实判定能力时，非 PUBLIC
       // 一律拒绝——安全机制的默认值只能 fail-closed。
-      forbidden("权限判定尚未配置（iamJwksUrl 未注入）");
+      forbidden("权限判定尚未配置（IAM_JWKS_URL 未注入）");
     }
 
     const token = bearerToken(context);

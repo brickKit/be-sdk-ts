@@ -15,7 +15,7 @@ TypeScript 横切基础库（总纲 §4 SOP-L，**只有一半能力**）。**�
 
 ## 现状（阶段三 Task 2）
 
-`Config`（含 camelCase→SCREAMING_SNAKE_CASE 转换）、`Runtime`/`Module` 类型、`runStandalone`、`newGraphQLServer`、`endpoint`——真实实现，18 条测试全绿（含"depth=6 被拒绝""白名单不能绕过深度限制"两条阶段三计划明确要求的回归测试，都做过故意改坏代码验证测试真的会红）。
+`Config`（精确键名，依赖地址 `config.endpoint()` 从 Config 读）、`Runtime`/`Module` 类型、`runStandalone`、`newGraphQLServer`、`Config.endpoint`——真实实现，18 条测试全绿（含"depth=6 被拒绝""白名单不能绕过深度限制"两条阶段三计划明确要求的回归测试，都做过故意改坏代码验证测试真的会红）。
 
 `otel.ts`/`logging.ts`/`metrics.ts` 现在只有签名 + `throw new Error("阶段三 Task 2 后续 TDD 补")`。**调用它们会抛异常，这是预期行为**，对齐 `be-sdk-go`/`be-sdk-python` 同一批文件的处理方式——留给后续用 TDD 补上，在 `infra-bff-mobile` 真正需要它们（Task 11）之前补齐。
 

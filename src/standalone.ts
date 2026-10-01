@@ -93,7 +93,8 @@ export async function runStandalone(
 
   const ports = loadOwnPorts("component.yaml");
 
-  const shutdownOtel = await bootstrap(componentId, process.env.OTEL_BASE_URL ?? "");
+  const config = new Config(envSnapshot());
+  const shutdownOtel = await bootstrap(componentId, config.stringOr("OTEL_BASE_URL", ""));
 
   const { newLogger } = await import("./logging.js");
   const { newRegistry } = await import("./metrics.js");
@@ -102,7 +103,7 @@ export async function runStandalone(
   const rt: Runtime = {
     componentId,
     componentVersion,
-    config: new Config(envSnapshot()),
+    config,
     logger: newLogger(componentId),
     tracer: getTracer(componentId),
     meter: getMeter(componentId),

@@ -30,7 +30,7 @@
  */
 
 import * as grpc from "@grpc/grpc-js";
-import { endpoint } from "./endpoint.js";
+import type { Config } from "./config.js";
 
 const AUTH_HEADER_KEY = "authorization";
 
@@ -56,7 +56,7 @@ function forwardAuthInterceptor(auth: string): grpc.Interceptor {
 }
 
 /**
- * 拨一条到 `dep` 的 gRPC 连接凭据，把 `auth`（调用方请求里的
+ * 拨一条到 `dep` 的 gRPC 连接凭据（地址从 `config` 读，不碰 process.env），把 `auth`（调用方请求里的
  * Authorization）透传给下游——下游按调用者身份做数据权限过滤
  * （设计书 §14.2.3）。
  *
@@ -64,8 +64,8 @@ function forwardAuthInterceptor(auth: string): grpc.Interceptor {
  * 任务一律用 {@link systemClient}——这两个名字的区别就是安全边界
  * （导读第 21 条）。
  */
-export function userClient(auth: string, dep: string, extra = ""): ClientDialOptions {
-  const { value: target, ok } = endpoint(dep, extra);
+export function userClient(config: Config, auth: string, dep: string, extra = ""): ClientDialOptions {
+  const { value: target, ok } = config.endpoint(dep, extra);
   if (!ok) {
     throw new Error(`besdk.userClient: 依赖 ${dep} 的地址未注入`);
   }
@@ -81,8 +81,8 @@ export function userClient(auth: string, dep: string, extra = ""): ClientDialOpt
  * 当成组件自身发起的调用，数据权限被绕过（设计书 §14.2.6）。只许出现
  * 在后台任务里，`make gates` 扫用户请求路径上的误用。
  */
-export function systemClient(dep: string, extra = ""): ClientDialOptions {
-  const { value: target, ok } = endpoint(dep, extra);
+export function systemClient(config: Config, dep: string, extra = ""): ClientDialOptions {
+  const { value: target, ok } = config.endpoint(dep, extra);
   if (!ok) {
     throw new Error(`besdk.systemClient: 依赖 ${dep} 的地址未注入`);
   }

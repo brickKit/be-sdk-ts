@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import * as grpc from "@grpc/grpc-js";
+import { Config } from "../src/config.js";
 import { userClient, systemClient } from "../src/client.js";
 
 function encode(obj: unknown): Buffer {
@@ -70,9 +71,9 @@ function callEcho(target: string, credentials: grpc.ChannelCredentials, options:
 describe("userClient", () => {
   it("真实连上一个 insecure gRPC 服务，且把 Authorization 转发到服务端（不再抛 Cannot compose insecure credentials）", async () => {
     const { port, server } = await startEchoServer();
-    process.env.BESDKTEST_ECHO_ENDPOINT = `http://127.0.0.1:${port}`;
+    const cfg = new Config({ BESDKTEST_ECHO_ENDPOINT: `http://127.0.0.1:${port}` });
     try {
-      const { target, credentials, options } = userClient("Bearer test-token-123", "besdktest/echo");
+      const { target, credentials, options } = userClient(cfg, "Bearer test-token-123", "besdktest/echo");
       const res = (await callEcho(target, credentials, options, { hello: "world" })) as {
         received: { hello: string };
         authorization: string | null;
@@ -80,20 +81,18 @@ describe("userClient", () => {
       expect(res.received).toEqual({ hello: "world" });
       expect(res.authorization).toBe("Bearer test-token-123");
     } finally {
-      delete process.env.BESDKTEST_ECHO_ENDPOINT;
       server.forceShutdown();
     }
   });
 
   it("auth 为空字符串时不设置 authorization metadata（不是设成空字符串）", async () => {
     const { port, server } = await startEchoServer();
-    process.env.BESDKTEST_ECHO_ENDPOINT = `http://127.0.0.1:${port}`;
+    const cfg = new Config({ BESDKTEST_ECHO_ENDPOINT: `http://127.0.0.1:${port}` });
     try {
-      const { target, credentials, options } = userClient("", "besdktest/echo");
+      const { target, credentials, options } = userClient(cfg, "", "besdktest/echo");
       const res = (await callEcho(target, credentials, options, {})) as { authorization: string | null };
       expect(res.authorization).toBeNull();
     } finally {
-      delete process.env.BESDKTEST_ECHO_ENDPOINT;
       server.forceShutdown();
     }
   });
@@ -102,13 +101,12 @@ describe("userClient", () => {
 describe("systemClient", () => {
   it("不转发任何身份——即使调用方传了 auth 也不带（systemClient 根本不接受 auth 参数）", async () => {
     const { port, server } = await startEchoServer();
-    process.env.BESDKTEST_ECHO_ENDPOINT = `http://127.0.0.1:${port}`;
+    const cfg = new Config({ BESDKTEST_ECHO_ENDPOINT: `http://127.0.0.1:${port}` });
     try {
-      const { target, credentials, options } = systemClient("besdktest/echo");
+      const { target, credentials, options } = systemClient(cfg, "besdktest/echo");
       const res = (await callEcho(target, credentials, options, {})) as { authorization: string | null };
       expect(res.authorization).toBeNull();
     } finally {
-      delete process.env.BESDKTEST_ECHO_ENDPOINT;
       server.forceShutdown();
     }
   });
