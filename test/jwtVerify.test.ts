@@ -87,4 +87,12 @@ describe("JWTVerifier", () => {
 
     await expect(verifier.verify(noIatToken)).rejects.toThrow();
   });
+
+  it("空 sub 的 token 拒绝验签（requiredClaims 只查在不在，与 be-sdk-go 对齐）", async () => {
+    jwks = await startFakeJWKS();
+    const verifier = new JWTVerifier(jwks.url);
+    const token = await jwks.sign({ sub: "" });
+
+    await expect(verifier.verify(token)).rejects.toThrow(/sub/);
+  });
 });

@@ -25,7 +25,7 @@ import type { Logger } from "pino";
 import { BundleCache, startBundlePoller } from "./bundle.js";
 import { JWTVerifier, type Claims } from "./jwtVerify.js";
 import type { Runtime } from "./runtime.js";
-import { setCurrentScope } from "./scope.js";
+import { scopeFromClaims, setCurrentScope } from "./scope.js";
 
 export type PermKey = string;
 
@@ -203,13 +203,9 @@ export function requirePermission<TSource, TContext, TArgs>(
       // 同一个 context 引用，GraphQL 执行一次请求期间所有 resolver
       // （无论层级）共享同一个 context 实例，等价于 Go 的
       // context.Context/Python 的 ContextVar 在同一次请求内的效果。
-      setCurrentScope(context, {
-        all: claims.deptPath === "",
-        prefix: claims.deptPath,
-        exact: claims.deptPath,
-        owner: claims.sub,
-        in: [],
-      });
+      // 求解本身是 scope.ts 里的纯函数：没分部门（dept_path 为空）的人
+      // 拿到的是 NO_DEPT_PATH，不是空串前缀（v0.5.0 之前那是 fail-open）。
+      setCurrentScope(context, scopeFromClaims(claims));
 
       if (perm === AUTHENTICATED) {
         return resolver(source, args, context, info);

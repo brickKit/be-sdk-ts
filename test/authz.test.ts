@@ -185,11 +185,44 @@ describe("requirePermission", () => {
 
       expect(scope).toEqual({
         all: false,
+        hasDept: true,
         prefix: "/root/china/east/sh-sales",
         exact: "/root/china/east/sh-sales",
         owner: "u_zhangsan",
         in: [],
       });
+    });
+
+    // R60：判定链算出的 ScopeFilter 走 scopeFromClaims——没分部门的人
+    // （dept_path 为空）在请求里拿到的 prefix 是哨兵，不是空串。
+    it.each([
+      ["", { all: false, hasDept: false, prefix: "!no-dept", exact: "!no-dept" }],
+      ["/", { all: true, hasDept: true, prefix: "/", exact: "/" }],
+      ["/1/12/", { all: false, hasDept: true, prefix: "/1/12/", exact: "/1/12/" }],
+    ])("验签后挂到 context 上的范围按 dept_path=%j 求解", async (deptPath, expected) => {
+      jwks = await startFakeJWKS();
+      const { JWTVerifier } = await import("../src/jwtVerify.js");
+      setAuthzRuntime(new JWTVerifier(jwks.url), null);
+      const token = await jwks.sign({ sub: "u_x", roles: [], dept_path: deptPath });
+
+      const context = fakeContext(`Bearer ${token}`);
+      const resolver = requirePermission(AUTHENTICATED, async (_s, _a, ctx: { request: Request }) => {
+        return scopeOf(ctx);
+      });
+      const scope = await resolver(undefined, {}, context as never, undefined as never);
+
+      expect(scope).toEqual({ ...expected, owner: "u_x", in: [] });
+    });
+
+    it("空 sub 的 token：401", async () => {
+      jwks = await startFakeJWKS();
+      const { JWTVerifier } = await import("../src/jwtVerify.js");
+      setAuthzRuntime(new JWTVerifier(jwks.url), null);
+      const token = await jwks.sign({ sub: "", roles: [] });
+
+      const result = await callResolver(AUTHENTICATED, fakeContext(`Bearer ${token}`));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(errStatus(result.error)).toBe(401);
     });
 
     it("token_stale：jwt.iat 早于 bundle 的 stale_since[sub] → 401 + WWW-Authenticate", async () => {

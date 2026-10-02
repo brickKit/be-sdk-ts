@@ -10,6 +10,7 @@
  */
 
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { JWTClaimValidationFailed } from "jose/errors";
 
 /** 本地验签后从 JWT 里取出的身份信息（设计书 §14.1.5：JWT 只带身份，权限键一个都不进）。 */
 export interface Claims {
@@ -37,15 +38,19 @@ export class JWTVerifier {
    * JWT，这里的白名单是纵深防御，同 Go/Python 版判据）。
    *
    * `requiredClaims: ["sub", "iat"]` 交给 `jose` 自己校验并抛
-   * `JWTClaimValidationFailed`——不手写 `if (!sub) throw` 那一套，同
-   * be-sdk-python 真机测试发现的教训：库自己已经做了，手写的分支是
-   * 永远走不到的死代码。
+   * `JWTClaimValidationFailed`。但它只查 claim 在不在：`"sub": ""` 能
+   * 通过。空 sub 让 owner 维变成 `owner_id = ''`，也和"没登录"无法区分，
+   * 所以验签之后再拒一次空串（与 be-sdk-go 的 jwt.go 对齐：空 sub 等同
+   * 缺 sub）。
    */
   async verify(token: string): Promise<Claims> {
     const { payload } = await jwtVerify(token, this.getKey, {
       algorithms: ["RS256"],
       requiredClaims: ["sub", "iat"],
     });
+    if (typeof payload.sub !== "string" || payload.sub === "") {
+      throw new JWTClaimValidationFailed('missing required "sub" claim', payload, "sub", "missing");
+    }
     const roles = Array.isArray(payload["roles"])
       ? (payload["roles"] as unknown[]).filter((r): r is string => typeof r === "string")
       : [];
