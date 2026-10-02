@@ -35,8 +35,25 @@ TypeScript 横切基础库（总纲 §4 SOP-L，**只有一半能力**）。**�
 - **bundle 轮询**（`bundle.ts`）：15 秒条件 GET `AUTHZ_BUNDLE_URL`（`If-None-Match`，未变化 304 不重新解析），一个自我重排的 `setTimeout` 链条，fail-static（单次拉取失败沿用内存里旧内容）。⚠️ 不用锁——单线程事件循环下 `fetchOnce` 末尾对几个字段的赋值之间没有 `await`，不可能被打断到一半。有一条测试真等 15 秒验证"改角色分配不重启组件也能生效"。
 - **`AUTHENTICATED` 新哨兵值**：阶段三 Task 4 写 `infra-authz` 时发现的真实缺口——`PUBLIC`/具体权限键两档之间缺"已登录即可，不需要权限键"这一档，与 Go/Python 版逐字对应。
 - **401/403/503 通过 `createGraphQLError` 的 `extensions.http.status`/`extensions.http.headers` 真的映射成 HTTP 响应状态码/响应头**（真机核对过 `graphql-yoga` 的 `getResponseInitByRespectingErrors` 源码），`token_stale` 场景的 `WWW-Authenticate` 响应头就是这样透出去的。
-- **`scopeOf()` 是纯函数**（§14.2.4）：`prefix`/`exact`/`owner` 永远从同一份 Claims 的 `deptPath`/`sub` 填。⚠️ 取不到时**不能**返回默认的 `ScopeFilter`——§14.2.4 的 SQL 约定"空字符串表示不限"，零值会被下游解读成放行一切，是 fail-open 不是 fail-closed；改成抛异常，让编程错误在联调阶段就现形（与 Go/Python 版同一处教训，各自独立发现）。
+- **`scopeOf()` 取的是纯函数 `scopeFromClaims(claims)` 的输出**（§14.2.4）：`prefix`/`exact`/`owner` 永远从同一份 Claims 的 `deptPath`/`sub` 填，求解规则见下面"数据范围（v0.5.0）"。⚠️ 取不到时**不能**返回默认的 `ScopeFilter`，那等于替调用方猜一个范围；改成抛异常，让编程错误在联调阶段就现形（与 Go/Python 版同一处教训，各自独立发现）。
 - 真机验证：起了本地 `infra-authz` 容器，轮询客户端直接打它真实的 `GET /authz/bundle`，确认认得出自举种子数据 `authz_admin`/`infra.authz.admin`。
+
+## 数据范围（v0.5.0）
+
+`scopeFromClaims(claims)` 按 `deptPath` 求 `ScopeFilter`，`requirePermission` 验签后用它算出挂到 `context` 上的那一份：
+
+| token 里的 `dept_path` | `hasDept` | `all` | `prefix` / `exact` |
+|---|---|---|---|
+| `""` 或不以 `/` 开头（没分部门、格式异常） | `false` | `false` | `NO_DEPT_PATH`（`"!no-dept"`） |
+| `"/"`（整棵树的显式根标记） | `true` | `true` | `"/"` |
+| 真实路径，如 `/1/12/` | `true` | `false` | 原值 |
+
+- **空 `dept_path` 不是"不限"。** 签发方给的真实路径恒以 `/` 开头（根部门也是 `/<根id>/`），空串只表示这个人没分部门。v0.5.0 之前把它原样当前缀，`LIKE '' || '%'` 匹配所有行，是 fail-open。
+- **哨兵是值层面的 fail-closed。** `NO_DEPT_PATH` 不以 `/` 开头、不含 `%` `_` `\`，绑进 `LIKE $n || '%'` 或 `startsWith` 什么都不命中，`owner OR org` 退化成只剩本人；没改代码的下游也自动收紧。
+- **SDK 保证 `prefix`/`exact` 永不为空串。** 仓储层收到空串前缀只可能是编程错误，要报错，不能当成"全部"。
+- **哨兵只能用来查，不能写进行里。** 建单时要快照调用方部门的，`hasDept` 为假时写空串。
+- **`ScopeFilter` 多了必填字段 `hasDept`。** 自己手写 `ScopeFilter` 字面量的代码（通常是测试）要补上它。
+- **空 `sub` 验签失败**（`JWTClaimValidationFailed`，经 `requirePermission` 是 401），与 `be-sdk-go` 一致。
 
 ## 一处会话内发现并推翻的坑：GraphQL 权限错误默认会被 Yoga 掩盖
 
