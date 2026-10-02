@@ -7,7 +7,13 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Logger } from "pino";
-import { BUNDLE_POLL_INTERVAL_MS, BundleCache, startBundlePoller } from "../src/bundle.js";
+import {
+  BUNDLE_FIRST_RETRY_DELAY_MS,
+  BUNDLE_POLL_INTERVAL_MS,
+  BundleCache,
+  nextBundleRetryDelay,
+  startBundlePoller,
+} from "../src/bundle.js";
 
 function fakeLogger(): Logger {
   return { warn: () => {}, error: () => {}, info: () => {} } as unknown as Logger;
@@ -21,6 +27,10 @@ interface FakeBundleServer {
   /** 下一次响应用的 ETag；若请求带的 If-None-Match 与此相同则回 304。 */
   setEtag: (etag: string) => void;
   notModifiedCount: number;
+  /** 收到的请求总数。 */
+  hitCount: number;
+  /** 接下来先回几次 503（模拟 authz 还在启动）。 */
+  setFailLeft: (n: number) => void;
 }
 
 function startFakeBundleServer(): Promise<FakeBundleServer> {
@@ -30,8 +40,17 @@ function startFakeBundleServer(): Promise<FakeBundleServer> {
   };
   let etag = "v1";
   let notModifiedCount = 0;
+  let hitCount = 0;
+  let failLeft = 0;
 
   const server: Server = createServer((req, res) => {
+    hitCount++;
+    if (failLeft > 0) {
+      failLeft--;
+      res.writeHead(503);
+      res.end();
+      return;
+    }
     if (body === null) {
       // ⚠️ 故意带一个"看起来像合法 bundle"的 JSON 体（而不是空 body）：
       // 空 body 会在 res.json() 那步天然抛异常、被动触发 fail-static，
@@ -74,6 +93,12 @@ function startFakeBundleServer(): Promise<FakeBundleServer> {
         },
         get notModifiedCount() {
           return notModifiedCount;
+        },
+        get hitCount() {
+          return hitCount;
+        },
+        setFailLeft: (n) => {
+          failLeft = n;
         },
       });
     });
@@ -141,6 +166,40 @@ describe("BundleCache", () => {
     const cache = new BundleCache();
     await expect(cache.fetchOnce("http://127.0.0.1:1/nowhere", fakeLogger())).resolves.toBeUndefined();
     expect(cache.hasEverFetched()).toBe(false);
+  });
+
+  // 06b 联调压出来的：组件和 authz 同时启动，第一次拉 bundle 时 authz 还没
+  // 起来，旧实现要等满一个轮询周期（15 秒）才重试，这期间每个受保护的字段
+  // 都答 503，启动后大约 20 秒不可用。首次成功之前应该短退避重试（0.5 秒起
+  // 翻倍、封顶轮询间隔）；成功之后回到 15 秒的条件轮询，不再密集请求。
+  it("startBundlePoller：首次拉取失败后短退避重试，不等满 15 秒", async () => {
+    server = await startFakeBundleServer();
+    server.setBody({ roles: { r1: ["p1"] }, stale_since: {} });
+    server.setFailLeft(2); // 前两次 503，第三次才成功
+
+    const cache = startBundlePoller(server.url, fakeLogger());
+    const deadline = Date.now() + 3000;
+    while (!cache.hasEverFetched() && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(cache.hasEverFetched()).toBe(true);
+    expect(cache.hasPermission(["r1"], "p1")).toBe(true);
+
+    const hits = server.hitCount;
+    await new Promise((r) => setTimeout(r, 2000));
+    expect(server.hitCount).toBe(hits); // 成功之后回到轮询间隔，不该继续短退避
+  }, 10_000);
+
+  it("nextBundleRetryDelay：从 0.5 秒起翻倍，封顶轮询间隔", () => {
+    let d = BUNDLE_FIRST_RETRY_DELAY_MS;
+    expect(d).toBe(500);
+    const want = [1000, 2000, 4000, 8000, BUNDLE_POLL_INTERVAL_MS, BUNDLE_POLL_INTERVAL_MS];
+    const got: number[] = [];
+    for (const _ of want) {
+      d = nextBundleRetryDelay(d);
+      got.push(d);
+    }
+    expect(got).toEqual(want);
   });
 
   it(
