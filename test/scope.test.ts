@@ -4,7 +4,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { scopeOf, setCurrentScope, type ScopeFilter } from "../src/scope.js";
+import type { Claims } from "../src/jwtVerify.js";
+import { scopeFromClaims, scopeOf, setCurrentScope, type ScopeFilter } from "../src/scope.js";
+
+function claims(sub: string, deptPath: string): Claims {
+  return { sub, roles: [], deptPath, orgId: "", issuedAt: new Date(0) };
+}
 
 describe("scopeOf", () => {
   it("按 JWT 字段填三个可选字段（§14.2.4：五档不是 scopeOf 自己判断出来的）", () => {
@@ -26,11 +31,13 @@ describe("scopeOf", () => {
     expect(f.owner).toBe("u_zhangsan");
   });
 
-  it("部门树根节点自然得到 all（不是特判出来的）", () => {
-    const context = {};
-    setCurrentScope(context, { all: true, prefix: "", exact: "", owner: "u_ceo", in: [] });
+  it("斜杠是整棵树的显式根标记（空 deptPath 只表示没分部门，不是根节点）", () => {
+    const f = scopeFromClaims(claims("u_ceo", "/"));
 
-    expect(scopeOf(context).all).toBe(true);
+    expect(f.all).toBe(true);
+    expect(f.hasDept).toBe(true);
+    expect(f.prefix).toBe("/");
+    expect("/1/12/".startsWith(f.prefix)).toBe(true);
   });
 
   it("context 上没有设置过 ScopeFilter 时抛异常——不能返回零值（那是 fail-open，方向反了）", () => {
