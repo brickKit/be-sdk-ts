@@ -1,98 +1,81 @@
+[English](README.md) · [中文](README.zh.md)
+
 # be-sdk-ts
 
-TypeScript 横切基础库（总纲 §4 SOP-L，**只有一半能力**）。**不是 brickKit 组件**，也**不是公共 model 包**——零业务逻辑、零组件 model、零组件间引用。它是 `be-acceptance` 铁律六 import 扫描的白名单之一（另两个是 `be-sdk-go`、`be-sdk-python`）。
+The official TypeScript runtime of the BrickEnterprise component protocol, **be-protocol 1.0** (`brickKit/be-protocol`, pinned at `v1.0.0-rc.1`). A component written with it meets the protocol's requirements on the wire; the black-box suite `conformance/component/` of `brickKit/be-acceptance` checks that. It is not a brickKit component and holds no business logic.
 
-⚠️ **只有一半，是设计书 §5.10 明说的**：`infra-bff-mobile` 严禁直连 DB（§6.5 铁律），`frontend-*` 更没有后端库可言。所以本仓库**没有** `withTx`、**没有**冷热路由（`batchGet` 归档路由）——这两样在 Go/Python 版里都是"最难查的雷"防线，TS 组件天生不碰数据库就不需要它们。**多出来的一条**：GraphQL 侧的深度/复杂度限制与 Persisted Operations（§11.4.3），这是 Go/Python 两份 SDK 都没有的东西。
+The same nouns as `be-sdk-go` and `be-sdk-python`, in camelCase: `defineComponent`, `main`, `Module`, `Runtime`, `rt.store()`, `store.tx`, `tx.publish`, `access()`, `rt.conn` / `rt.client`, `rt.userHttp`, `beError`.
 
-## 它替 TS 组件挡住的坑
+## A component
 
-| 能力 | 文件 | 挡住的坑 |
+```ts
+import { main, defineComponent, PUBLIC, access, beError } from "@brickkit/be-sdk-ts";
+
+main(defineComponent({
+  id: "erp/sales",
+  migrations: "migrations",          // node-pg-migrate SQL files + lifecycle.yaml
+  contracts: "contracts",            // errors.yaml, events/*.events.json
+  create: async (rt) => ({
+    http: (r) => {
+      r.post("/orders", "erp.sales.create", async (req) => {
+        const id = await rt.store().tx(async (tx) => {
+          // … business writes with tx.query(sql, params, zodRow?) …
+          await tx.publish({ subject: "sales.order.created.v1", aggregateId: orderId, version: 1, payload });
+          return orderId;
+        });
+        return { id };
+      }, { timeoutMs: 15_000 });
+      r.get("/me", PUBLIC, async () => ({ ok: true }));
+    },
+    grpc: (s) => s.addService(SalesServiceService, impl, { schema: protoMetadata }),
+    events: {
+      publishes: ["sales.order.created.v1"],
+      subscribe: [{ subject: "finance.credit.rejected.v1", apply: async (tx, ev) => { /* local writes */ } }],
+    },
+  }),
+}));
+```
+
+The image's entry points (P1.1): no argument serves; `migrate up | down <n> | status` migrates (`component.yaml` `migration.command: [node, main.js, migrate, up]`); `job run <name>` is reserved (P14.8, see *Not yet*). Exit codes: 0 clean stop or migration done (also when the schema is newer than the image), 1 a failed initialisation or migration, 64 an unknown argument or job, 78 a configuration error (one JSON line per key).
+
+## What it implements
+
+| Area | Requirements | Notes |
 |---|---|---|
-| 组件地址剥 scheme，且只从 Config 读 | `config.ts`（`Config.endpoint`/`mustEndpoint`）、`endpoint.ts`（`envName`） | 直接把带 scheme 的地址传给 gRPC 客户端连不上，报错指向名称解析（导读第 1 条）；读 `process.env` 会在合并态下串味（导读第 16 条） |
-| GraphQL 深度/复杂度限制 | `graphqlServer.ts` | 恶意或手滑的深层嵌套查询把下游打满——GraphQL 的经典 DoS 面（§11.4.3） |
-| Persisted Operations | `graphqlServer.ts` | 允许任意查询文本 = 允许客户端发任意查询，弱网下还要传完整查询文本 |
-| DataLoader 必须 per-request | `dataloader.ts` | 全局单例会跨请求缓存命中，**A 用户看到 B 用户的数据**，且单请求测试测不出来 |
+| Process | P1.1–P1.8, P1.13 | start order, `/healthz`, `/readyz` (bundle, `db_identity`, `migrations`; latched), SIGTERM drains within `SHUTDOWN_GRACE`, supervised background work (1 s → 5 min), dual-stack listen |
+| Configuration | P2 | only `configSchema` keys, strict types by the catalogue (`schemas/config-keys.yaml`), all errors at once, `_FILE` secrets read and re-read by mtime/size, `*_ENDPOINT` and family addresses (`$endpoint:` values, no port arithmetic); the serve entry point never opens `PG_OWNER_PASSWORD_FILE` |
+| HTTP | P3.1–P3.6, P3.10, P3.12 | one Fastify 5 instance per member; `headersTimeout` 5000 + `connectionsCheckingInterval` 1000, `requestTimeout` 30000, `keepAliveTimeout` 120000, `bodyLimit` 1 MiB, `handlerTimeout` = route deadline answered 504 |
+| Errors | P4 | problem+json, gRPC status + `google.rpc` details, relaying a dependency's reason, the 33 reasons of `errors-be.yaml` |
+| Identity, authorization | P5, P6.1, P6.2 | JWT (RS256/ES256/EdDSA, `typ=access`, iss/aud/exp/iat/jti, JWKS cache), bundle `authz/2.x` (E1–E5: stale, revoked grants, delegation, windows, ceilings, keys), `access().user()` / `.has(k)` |
+| System plane | P7 | server chain, batch limits from ts-proto `protoMetadata`, channel per dependency, retry service config from `idempotency_level`, outbound deadline, bulkhead 64 |
+| Outbound HTTP | P8 | `rt.userHttp(dep)` forwards the caller's token; `rt.externalHttp(name)` forwards nothing internal; both refuse inside a transaction |
+| Database | P10 | `Store` / `Tx`, the `SET LOCAL` block, `/* be:<schema> */` prefix with unnamed statements, timeouts, retries, SQLSTATE mapping, member budget, start-up probe |
+| Migrations | P11.1–P11.3 | owner login, per-schema lock, state tables `pgmigrations_<schema>` / `besdk_migrations_<schema>`, the platform migration (reference DDL), the outbox window, streams and durables |
+| Events | P12 | outbox, pump (PubAck), JetStream durables created never updated, runtime-side redelivery and dead letters, aggregate-stream cursor, causation and hop count |
+| Observability | P18 (partly), P20 | per-member tracer provider over a shared exporter, W3C propagator, JSON logs with redaction and 2 KiB lines, `be_` metrics with `component`, `/_be/info` |
+| Mobile BFF | P4.5 | `mountGraphQL` (persisted operations, depth and cost limits), `guard(key, resolver)`, `createBatchGetLoader` |
 
-## v0.4.0 配置契约（v1）
+## Migrations directory
 
-- 配置键名是精确的 UPPER_SNAKE 环境变量名，不做任何驼峰转换：`config.string("PG_SCHEMA")`、`IAM_JWKS_URL`、`AUTHZ_BUNDLE_URL`、`S3_URL`、`OTEL_BASE_URL`。`pgSchema` 这类写法查不到。
-- 依赖地址：`config.endpoint(dep, extra?)` / `config.mustEndpoint(dep, extra?)`（剥 scheme 与结尾斜杠，只读 Config，键缺失或为空都视为缺失）；`envName(dep, extra?)` 推导变量名；对象存储用 `config.s3Url()`（完整 URL，原样返回）。包级 `endpoint`/`mustEndpoint`/`storageEndpoint` 已删除。
-- gRPC 客户端：`userClient(config, auth, dep, extra?)` / `systemClient(config, dep, extra?)`，调用方传 `rt.config`。
+Only `*.sql` files and `lifecycle.yaml`. A file name starts with a number (`0001_create-orders.sql`); the file has a `-- Up Migration` section and an optional `-- Down Migration` section (node-pg-migrate's SQL format); one transaction per file, except a file whose first line is `-- be:no-transaction` (a lone `CREATE INDEX CONCURRENTLY`, P11.4). Names are unqualified (P11.2).
 
-## 现状（阶段三 Task 2，历史记录）
+## Notes for this runtime
 
-`Config`（精确键名，依赖地址 `config.endpoint()` 从 Config 读）、`Runtime`/`Module` 类型、`runStandalone`、`newGraphQLServer`——真实实现，测试全绿（含"depth=6 被拒绝""白名单不能绕过深度限制"两条阶段三计划明确要求的回归测试，都做过故意改坏代码验证测试真的会红）。
+- **grpc-js** cannot enforce the server keepalive policy (`MinTime`, P7.5); clients keep P7.6. Its retry budget is shared per process and target and does not refill on re-resolution (P7.8): members of a TypeScript shell calling one dependency share it.
+- **`rt.client(Ctor, dep, protoMetadata)`** takes the generated `protoMetadata` (ts-proto `outputServices=grpc-js,esModuleInterop=true,outputSchema=true,importSuffix=.js,enumsAsLiterals=true`): retries and batch limits come from it.
+- **Node quirks handled here**: `close()` of an HTTP server keeps the connection of a request that was in flight, so idle connections are closed while draining; `request.signal` aborts once a POST body has been read, so a unit's cancellation is the route deadline or a client that went away; `BeError` is recognised by a brand, not `instanceof`, because two copies of a module graph do not share classes.
 
-`otel.ts`/`logging.ts`/`metrics.ts` 现在只有签名 + `throw new Error("阶段三 Task 2 后续 TDD 补")`。**调用它们会抛异常，这是预期行为**，对齐 `be-sdk-go`/`be-sdk-python` 同一批文件的处理方式——留给后续用 TDD 补上，在 `infra-bff-mobile` 真正需要它们（Task 11）之前补齐。
+## Not yet (later tasks of v0.6.0)
 
-`client.ts` 按 `be-sdk-go`/`be-sdk-python` 同一条判据写：`userClient`/`systemClient` 两种身份透传（v0.4.0 起首参改为 `config`，见上）。
+Idempotency (`idempotent`, `tx.idem*`, P13), jobs and reconcilers and `job run` (P14), scopes, record decisions, projection and the resource contract (P6.3–P6.15), the lifecycle engine and business partition windows (P16), calendar, money, numbering, object storage, caches, snapshots (P11.6–P11.10, P15, P17), the authz poke subscription (P12.10), an OTel MeterProvider exported on `/metrics` (`rt.meter` is a no-op meter today), the PostgreSQL bus adapter (P12.12), the testing package and the shell launcher (P19).
 
-## 现状（阶段三 Task 5，权限判定真正上线）
+## Development
 
-`requirePermission`/`scopeOf` 从 Task 2 的 fail-closed stub 换成真实判定——与 `be-sdk-go`/`be-sdk-python` 同一批上线，判定链逐字对应（设计书 §14.1.6 第 3 步、§14.1.9），只有两处必要差异（见 `authz.ts`/`scope.ts` 模块文档）：① 判据从"路由注册函数强制要求权限键参数"平移成"每个字段 resolver 必须经过 `requirePermission` 包装"（GraphQL 没有路由，只有字段）；② Go/Python 从 `context.Context`/contextvar 隐式取当前请求，这里改成 GraphQL resolver 的 `context` 参数显式携带——`requirePermission` 验签成功后把算好的 `ScopeFilter` 挂到 `context` 对象上（用 `Symbol` 键，避免撞名），`scopeOf(context)` 从同一个对象读回。⚠️ **这套机制本身的协议描述（JWT claims 约定、bundle 的 wire format、判定链、ScopeFilter 语义）见 [`docs/authz-protocol.md`](docs/authz-protocol.md)**——独立写的，不假设读者知道 brickKit 是什么，换一个签发方/策略服务实现也能对着它接。
-
-- **JWT 本地验签**（`jwtVerify.ts`）：用 [`jose`](https://github.com/panva/jose)（决策 32：有现成的就用现成的）——`createRemoteJWKSet` 自带 JWK Set 缓存与刷新，`jwtVerify` 本身就是异步的，不像 Python 版需要 `asyncio.to_thread` 包一层同步库。只认 RS256；`requiredClaims: ["sub", "iat"]` 交给 `jose` 自己校验并抛 `JWTClaimValidationFailed`，不手写判断（同 be-sdk-python 真机测试发现的教训：库自己已经做了，手写分支是死代码）。`infra-iam-casdoor` 要到阶段三 Task 7 才建仓库，测试自己起一对 RSA 密钥 + 一个真实绑定端口的 `node:http` 服务器当 JWKS 端点，加密运算是真的，只是身份是测试夹具。
-- **bundle 轮询**（`bundle.ts`）：15 秒条件 GET `AUTHZ_BUNDLE_URL`（`If-None-Match`，未变化 304 不重新解析），一个自我重排的 `setTimeout` 链条，fail-static（单次拉取失败沿用内存里旧内容）。v0.5.0 起，首次成功之前不等满 15 秒：按 0.5 秒起翻倍、封顶 15 秒的退避重试，成功后才进入 15 秒轮询——组件和 authz 同时启动时，受保护的字段不再在启动后约 20 秒里一直答 503。⚠️ 不用锁——单线程事件循环下 `fetchOnce` 末尾对几个字段的赋值之间没有 `await`，不可能被打断到一半。有一条测试真等 15 秒验证"改角色分配不重启组件也能生效"。
-- **`AUTHENTICATED` 新哨兵值**：阶段三 Task 4 写 `infra-authz` 时发现的真实缺口——`PUBLIC`/具体权限键两档之间缺"已登录即可，不需要权限键"这一档，与 Go/Python 版逐字对应。
-- **401/403/503 通过 `createGraphQLError` 的 `extensions.http.status`/`extensions.http.headers` 真的映射成 HTTP 响应状态码/响应头**（真机核对过 `graphql-yoga` 的 `getResponseInitByRespectingErrors` 源码），`token_stale` 场景的 `WWW-Authenticate` 响应头就是这样透出去的。
-- **`scopeOf()` 取的是纯函数 `scopeFromClaims(claims)` 的输出**（§14.2.4）：`prefix`/`exact`/`owner` 永远从同一份 Claims 的 `deptPath`/`sub` 填，求解规则见下面"数据范围（v0.5.0）"。⚠️ 取不到时**不能**返回默认的 `ScopeFilter`，那等于替调用方猜一个范围；改成抛异常，让编程错误在联调阶段就现形（与 Go/Python 版同一处教训，各自独立发现）。
-- 真机验证：起了本地 `infra-authz` 容器，轮询客户端直接打它真实的 `GET /authz/bundle`，确认认得出自举种子数据 `authz_admin`/`infra.authz.admin`。
-
-## 数据范围（v0.5.0）
-
-`scopeFromClaims(claims)` 按 `deptPath` 求 `ScopeFilter`，`requirePermission` 验签后用它算出挂到 `context` 上的那一份：
-
-| token 里的 `dept_path` | `hasDept` | `all` | `prefix` / `exact` |
-|---|---|---|---|
-| `""` 或不以 `/` 开头（没分部门、格式异常） | `false` | `false` | `NO_DEPT_PATH`（`"!no-dept"`） |
-| `"/"`（整棵树的显式根标记） | `true` | `true` | `"/"` |
-| 真实路径，如 `/1/12/` | `true` | `false` | 原值 |
-
-- **空 `dept_path` 不是"不限"。** 签发方给的真实路径恒以 `/` 开头（根部门也是 `/<根id>/`），空串只表示这个人没分部门。v0.5.0 之前把它原样当前缀，`LIKE '' || '%'` 匹配所有行，是 fail-open。
-- **哨兵是值层面的 fail-closed。** `NO_DEPT_PATH` 不以 `/` 开头、不含 `%` `_` `\`，绑进 `LIKE $n || '%'` 或 `startsWith` 什么都不命中，`owner OR org` 退化成只剩本人；没改代码的下游也自动收紧。
-- **SDK 保证 `prefix`/`exact` 永不为空串。** 仓储层收到空串前缀只可能是编程错误，要报错，不能当成"全部"。
-- **哨兵只能用来查，不能写进行里。** 建单时要快照调用方部门的，`hasDept` 为假时写空串。
-- **`ScopeFilter` 多了必填字段 `hasDept`。** 自己手写 `ScopeFilter` 字面量的代码（通常是测试）要补上它。
-- **空 `sub` 验签失败**（`JWTClaimValidationFailed`，经 `requirePermission` 是 401），与 `be-sdk-go` 一致。
-
-## 一处会话内发现并推翻的坑：GraphQL 权限错误默认会被 Yoga 掩盖
-
-Yoga 的 `maskedErrors`（默认开启）只放行 `instanceof GraphQLError` 的错误（`isOriginalGraphQLError`）——用裸 `Error` 子类抛权限错误，客户端只会看到通用的 `"Unexpected error."`，完全看不出是权限问题还是服务真的挂了。`authz.ts` 的判据是：**403 属于"该让调用方看见的正常业务语义"，不是要隐藏的内部错误**，所以用 `createGraphQLError`（`graphql-yoga` 导出）造错误，不用裸 `Error`。
-
-⚠️ **`graphql-armor` 的深度/复杂度校验走的是验证阶段（`validate()`），即使它抛的也是原生 `GraphQLError`，仍然会被掩盖成 `"Unexpected error."`**——这与 authz 的 403 不是同一条路径，本仓库的测试（`test/graphqlServer.test.ts`）没有强行改这条默认行为，而是断言"确实被拒、没有数据返回"这个可观察到的事实，不断言消息文本。
-
-## 为什么是 GraphQL Yoga + graphql-armor（真查证过，不是凭印象选的）
-
-| 决定 | 依据 |
-|---|---|
-| GraphQL Yoga 而不是 Apollo Server | 内置 Persisted Operations 插件明确支持"构建期注册表 + 拒绝未知哈希"这种 safelisting 形态（与 Apollo 的运行时 APQ 是两回事），插件形态直接对得上 §11.4.3 那三条限制 |
-| `@escape.tech/graphql-armor` 而不是自己写深度/复杂度计算 | 官方维护的一组现成防护插件，`maxDepth`/`costLimit` 配置直接对应 §11.4.3 的两个数字，不用自己写 AST 遍历 |
-| `@prometheus-io/client` 而不是 `prom-client` | `prom-client` 已被其官方标记 deprecated、替换为此包；后者是 Prometheus 官方团队维护、依赖 `@opentelemetry/api`（与本仓库已有的 OTel 依赖天然契合），API 形状（`Counter`/`Histogram`/`Registry` 的 `name`/`help`/`labelNames`/`registers`）与 `prom-client` 基本一致，不用大改调用点 |
-
-## 用法
-
-```ts
-// module.ts
-export async function newModule(rt: Runtime): Promise<Module> {
-  const schema = makeExecutableSchema({ typeDefs, resolvers: {
-    orders: requirePermission("erp.sales.view", async (_, args, ctx) => {
-      const loader = createBatchGetLoader(ids => batchGetOrders(ids)); // per-request！
-      return loader.load(args.id);
-    }),
-  }});
-  const yoga = newGraphQLServer(rt, { schema, getPersistedOperation });
-  return { httpHandler: yoga };
-}
+```sh
+make sync-protocol      # copy schemas/, ddl/, proto/, vectors/ of be-protocol (and the authz decision vectors) at the pinned tags into protocol/
+make test               # typecheck + unit tests: the protocol vectors, pure logic, in-process servers
+make test-integration   # throwaway postgres:16, postgres:14, nats:2.12 containers (prefix sdkb-ts-), then removed
+make build              # dist/
 ```
 
-```ts
-// main.ts 只有几行
-import { runStandalone } from "@brickkit/be-sdk-ts";
-import { newModule } from "./module.js";
-
-void runStandalone(newModule);
-```
-
-## 依赖
-
-`graphql-yoga` / `@graphql-tools/schema` / `@graphql-yoga/plugin-persisted-operations` / `@escape.tech/graphql-armor`（GraphQL 层）、`@grpc/grpc-js`（客户端调后端组件）、`dataloader`、`@opentelemetry/api` + `@opentelemetry/sdk-node`、`@prometheus-io/client`、`pino`、`jose`（JWT/JWKS 验签）。版本精确锁定（`package.json` 里没有 `^`/`~`），TypeScript `5.9.3`（不是刚发布的 7.0 原生编译器重写版——生态兼容性还没跟上，等它稳定后再评估要不要换）。
+`protocol/` is committed: the runtime ships `protocol/schemas` and `protocol/ddl`, the tests read `protocol/vectors`; `protocol/PINNED` names the commits. `platform-migrations/` is generated from `protocol/ddl` by `scripts/gen-platform-migration.mjs` (`--check` verifies it).
