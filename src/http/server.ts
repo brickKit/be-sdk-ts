@@ -6,7 +6,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import type { Logger } from "pino";
 import { decide, type AuthDeps, type Guard } from "../auth/guard.js";
 import { runUnit, Unit } from "../context.js";
-import { BeError, platformError } from "../errors/beError.js";
+import { BeError, platformError, isBeError } from "../errors/beError.js";
 import type { ErrorCatalog } from "../errors/catalog.js";
 import { logLevel } from "../errors/codes.js";
 import { problemBody, publicError } from "../errors/problem.js";
@@ -92,6 +92,12 @@ function onRequest(d: HttpDeps, req: WithState, reply: FastifyReply, done: () =>
   const timeout = req.routeOptions.handlerTimeout || d.defaultTimeoutMs;
   const unit = new Unit({ memberId: d.memberId, deadline: Date.now() + timeout, signal: req.signal, requestId });
   req[STATE] = { unit, span, start };
+  const decided = new Map<string, Promise<void>>();
+  unit.authorize = (guard) => {
+    let p = decided.get(guard);
+    if (!p) decided.set(guard, (p = decideCounted(d, guard, req.headers.authorization, unit)));
+    return p;
+  };
   context.with(trace.setSpan(parent, span), () => runUnit(unit, done));
 }
 
@@ -108,7 +114,7 @@ function sendError(d: HttpDeps, req: WithState, reply: FastifyReply, raw: unknow
   const st = req[STATE];
   const err = mapFrameworkError(raw);
   const shown = publicError(err, d.memberId);
-  if (st) st.error = err instanceof BeError ? err.withDomain(d.memberId) : new BeError("INTERNAL", "INTERNAL", { domain: "be", message: String((raw as Error)?.message ?? raw), cause: raw });
+  if (st) st.error = isBeError(err) ? err.withDomain(d.memberId) : new BeError("INTERNAL", "INTERNAL", { domain: "be", message: String((raw as Error)?.message ?? raw), cause: raw });
   const ids = { path: req.url.split("?")[0]!, requestId: st?.unit.requestId ?? "", traceId: st?.span.spanContext().traceId ?? "" };
   let p;
   try {

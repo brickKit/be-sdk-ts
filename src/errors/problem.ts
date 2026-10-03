@@ -1,6 +1,6 @@
 // RFC 9457 problem+json carrying AIP-193 members (P4.1, P4.3); restoring a dependency's REST error (P8.2);
 // Retry-After (P4); reason-name rules (P4.4, P4.7). Vectors errors/problem, errors/codes.
-import { BeError } from "./beError.js";
+import { BeError, isBeError } from "./beError.js";
 import { HIDDEN_CODES, codeFromHttpStatus, httpStatus, isCode } from "./codes.js";
 import { beCatalog, type ErrorCatalog } from "./catalog.js";
 import { SpecError } from "./specError.js";
@@ -32,7 +32,7 @@ const GENERIC_DETAIL = { zh: "系统出错了。反馈时请提供 trace ID。",
 
 /** The error as the caller sees it: hidden codes, foreign errors and errors without a domain become INTERNAL. */
 export function publicError(err: unknown, componentId?: string): BeError {
-  if (!(err instanceof BeError)) return new BeError("INTERNAL", "INTERNAL", { domain: "be" });
+  if (!isBeError(err)) return new BeError("INTERNAL", "INTERNAL", { domain: "be" });
   const domain = err.domain ?? componentId;
   if (HIDDEN_CODES.has(err.code) || !domain) return new BeError(HIDDEN_CODES.has(err.code) ? err.code : "INTERNAL", "INTERNAL", { domain: "be" });
   return err.withDomain(domain);

@@ -22,7 +22,11 @@ export interface BeErrorOptions {
   cause?: unknown;
 }
 
+const BRAND = Symbol.for("be-sdk.BeError");
+
 export class BeError extends Error {
+  /** brand checked by isBeError: `instanceof` fails across two copies of the package or module graph */
+  readonly [BRAND] = true;
   readonly code: GrpcCode;
   readonly reason: string;
   readonly domain: string | undefined;
@@ -65,5 +69,5 @@ export function platformError(reason: string, metadata?: Record<string, string>,
 }
 
 export function isBeError(e: unknown): e is BeError {
-  return e instanceof BeError;
+  return typeof e === "object" && e !== null && (e as Record<symbol, unknown>)[BRAND] === true;
 }

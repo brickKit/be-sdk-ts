@@ -31,6 +31,8 @@ export class Unit {
   handling: HandledEvent | undefined;
   job: string | undefined;
   inTx = false;
+  /** decides a guard for this request (set by the HTTP layer; used by GraphQL resolvers) */
+  authorize: ((guard: string) => Promise<void>) | undefined;
   [TOKEN]: string | undefined;
 
   constructor(o: { memberId: string; deadline: number; signal: AbortSignal; requestId?: string }) {
