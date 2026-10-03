@@ -7,7 +7,8 @@ import { parse } from "yaml";
 
 export const PROTOCOL_VERSION = "1.0";
 export const SDK_NAME = "be-sdk-ts";
-export const SDK_VERSION = "0.6.0";
+/** the package's own version (package.json), shown in /_be/info */
+export const SDK_VERSION: string = (JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")) as { version: string }).version;
 
 export function protocolPath(rel: string): string {
   return fileURLToPath(new URL(`../protocol/${rel}`, import.meta.url));

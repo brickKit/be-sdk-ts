@@ -101,7 +101,7 @@ describe("serving (P1.2–P1.6, P20)", () => {
     const info = (await (await fetch(`${h.baseUrl}/_be/info`)).json()) as Record<string, any>;
     expect(info).toMatchObject({
       component_id: "sdktest/basic", component_version: "3.0.0", protocol: "1.0",
-      sdk: { name: "be-sdk-ts", version: "0.6.0" }, language: { name: "node" }, members: null,
+      sdk: { name: "be-sdk-ts", version: expect.stringMatching(/^0\.6\.0/) }, language: { name: "node" }, members: null,
     });
     expect(info.profiles).toEqual(expect.arrayContaining(["core", "obs", "err", "auth"]));
     expect(info.ports.http).toBe(Number(new URL(h.baseUrl).port));
