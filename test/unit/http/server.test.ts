@@ -81,7 +81,9 @@ describe("operations endpoints (P1.3, P1.4, P3.12, P20)", () => {
   it("/_be/info and /metrics", async () => {
     expect(await (await get("/_be/info")).json()).toEqual({ component_id: "sdktest/basic" });
     await get("/sdktest/basic/open");
+    reg.meter.createCounter("widgets_made").add(2);
     const m = await (await get("/metrics")).text();
+    expect(m).toMatch(/widgets_made(_total)?\{[^}]*component="sdktest\/basic"[^}]*\} 2/);
     expect(m).toMatch(/be_http_server_requests_total\{method="GET",route="\/sdktest\/basic\/open",status_code="200",component="sdktest\/basic"\} \d/);
   });
 });

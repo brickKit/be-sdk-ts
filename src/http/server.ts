@@ -160,7 +160,7 @@ function registerOps(app: FastifyInstance, d: HttpDeps): void {
     if (r.ok) return reply.type("text/plain").send("ok");
     throw platformError("NOT_READY", { waiting: r.waiting.join(",") });
   });
-  app.get("/metrics", async (_req, reply) => reply.type("text/plain; version=0.0.4").send(await d.metrics.registry.metrics()));
+  app.get("/metrics", async (_req, reply) => reply.type("text/plain; version=0.0.4").send(await d.metrics.render()));
   app.get("/_be/info", async () => d.ops.info());
 }
 

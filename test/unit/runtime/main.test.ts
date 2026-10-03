@@ -32,9 +32,13 @@ const spec = (over: Partial<Module> = {}, create?: () => Promise<Module>) =>
   defineComponent({
     id: "sdktest/basic",
     manifest: comp.manifest,
-    create: create ?? (async () => ({
+    create: create ?? (async (rt) => ({
       http: (r) => {
-        r.get("/hello", PUBLIC, async () => ({ hello: "world" }));
+        const served = rt.meter.createCounter("hello_served");
+        r.get("/hello", PUBLIC, async () => {
+          served.add(1);
+          return { hello: "world" };
+        });
         r.get("/me", AUTHENTICATED, async () => ({ sub: access().user().sub }));
         r.get("/slow", PUBLIC, async () => {
           await new Promise((res) => setTimeout(res, 300));
@@ -95,6 +99,12 @@ describe("serving (P1.2–P1.6, P20)", () => {
     expect((await fetch(`${h.baseUrl}/readyz`)).status).toBe(200);
     const me = await fetch(`${h.baseUrl}/sdktest/basic/me`, { headers: { authorization: `Bearer ${await iam.sign()}` } });
     expect(await me.json()).toEqual({ sub: "u_me" });
+  });
+
+  it("exports the module's rt.meter instruments on /metrics with the component label", async () => {
+    await fetch(`${h.baseUrl}/sdktest/basic/hello`);
+    const m = await (await fetch(`${h.baseUrl}/metrics`)).text();
+    expect(m).toMatch(/hello_served(_total)?\{[^}]*component="sdktest\/basic"[^}]*\} [1-9]/);
   });
 
   it("describes itself at /_be/info", async () => {

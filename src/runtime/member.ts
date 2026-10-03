@@ -1,7 +1,6 @@
 // One member's life (P1): build the runtime, create the module (≤ 30 s), open the ports, start the background
 // work under the supervisor, report readiness; on stop, drain requests within SHUTDOWN_GRACE, then stop the
 // background work and close everything the member owns. The platform outlives its members (P19.3).
-import { metrics } from "@opentelemetry/api";
 import type { Logger } from "pino";
 import type { Config } from "../config/config.js";
 import type { Manifest } from "../config/manifest.js";
@@ -69,7 +68,7 @@ export class Member {
     const store = this.store;
     this.rt = new Runtime({
       id: this.id, version: this.version, config: o.config, logger: o.logger, tracer: this.telemetry.tracer,
-      meter: metrics.getMeterProvider().getMeter(this.id, this.version), metrics: this.metrics,
+      meter: this.metrics.meter, metrics: this.metrics,
       grpc: new GrpcClients({ memberId: this.id, config: o.config, metrics: this.metrics }),
       store: store ? () => store : undefined,
     });
@@ -176,6 +175,7 @@ export class Member {
     await this.module?.stop?.().catch((e) => this.logger.error(errorFields(e), "module_stop_failed"));
     for (const s of this.config.allSecrets()) s.stop();
     await this.telemetry.shutdown();
+    await this.metrics.shutdown();
   }
 }
 

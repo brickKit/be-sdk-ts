@@ -1,4 +1,10 @@
 // One Prometheus registry per member (P18.3), every series labelled `component`; the protocol's `be_` metrics.
+// Next to it, the member's own OpenTelemetry MeterProvider (rt.meter): a pull reader collected on each scrape of
+// /metrics and rendered with the component as a constant label, so a module's instruments land on the same page.
+import type { Meter } from "@opentelemetry/api";
+import { PrometheusExporter, PrometheusSerializer } from "@opentelemetry/exporter-prometheus";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { MeterProvider } from "@opentelemetry/sdk-metrics";
 import { Counter, Gauge, Histogram, Registry } from "@prometheus-io/client";
 
 const SECONDS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30];
@@ -39,10 +45,31 @@ export type BeMetrics = ReturnType<typeof beMetrics>;
 export interface MemberRegistry {
   registry: Registry;
   be: BeMetrics;
+  /** the member's OpenTelemetry meter (rt.meter), exported on /metrics */
+  meter: Meter;
+  /** the Prometheus text of both: the be_ registry, then the meter's instruments */
+  render(): Promise<string>;
+  /** ends the meter provider (member stop) */
+  shutdown(): Promise<void>;
 }
+
+const COMPONENT_LABEL = /^component$/;
 
 export function newMemberRegistry(componentId: string): MemberRegistry {
   const registry = new Registry();
   registry.setDefaultLabels({ component: componentId });
-  return { registry, be: beMetrics(registry) };
+  const reader = new PrometheusExporter({ preventServerStart: true });
+  const provider = new MeterProvider({ resource: resourceFromAttributes({ component: componentId }), readers: [reader] });
+  const serializer = new PrometheusSerializer("", false, COMPONENT_LABEL, true, true);
+  return {
+    registry,
+    be: beMetrics(registry),
+    meter: provider.getMeter(componentId),
+    render: async () => {
+      const own = await registry.metrics();
+      const { resourceMetrics } = await reader.collect();
+      return own + serializer.serialize(resourceMetrics);
+    },
+    shutdown: () => provider.shutdown(),
+  };
 }
