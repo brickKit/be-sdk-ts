@@ -90,7 +90,7 @@ function onRequest(d: HttpDeps, req: WithState, reply: FastifyReply, done: () =>
   const requestId = typeof inbound === "string" && inbound !== "" ? inbound : traceId;
   reply.header("x-request-id", requestId);
   const timeout = req.routeOptions.handlerTimeout || d.defaultTimeoutMs;
-  const unit = new Unit({ memberId: d.memberId, deadline: Date.now() + timeout, signal: req.signal, requestId });
+  const unit = new Unit({ memberId: d.memberId, deadline: Date.now() + timeout, signal: unitSignal(req, reply), requestId });
   req[STATE] = { unit, span, start };
   const decided = new Map<string, Promise<void>>();
   unit.authorize = (guard) => {
@@ -190,4 +190,19 @@ async function drain(app: FastifyInstance, graceMs: number): Promise<void> {
     clearInterval(tick);
     clearTimeout(cut);
   }
+}
+
+/**
+ * The unit's cancellation: the route deadline (Fastify's handler timeout) or a client that went away before the
+ * answer. Not `request.signal` itself: it also aborts once a request body has been read (seen on POST, Node 24).
+ */
+function unitSignal(req: FastifyRequest, reply: FastifyReply): AbortSignal {
+  const ac = new AbortController();
+  req.signal.addEventListener("abort", () => {
+    if ((req.signal.reason as { code?: string })?.code === "FST_ERR_HANDLER_TIMEOUT") ac.abort(req.signal.reason);
+  }, { once: true });
+  reply.raw.once("close", () => {
+    if (!reply.raw.writableFinished) ac.abort(new Error("the client went away"));
+  });
+  return ac.signal;
 }

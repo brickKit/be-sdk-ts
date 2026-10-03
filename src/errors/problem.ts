@@ -34,7 +34,9 @@ const GENERIC_DETAIL = { zh: "系统出错了。反馈时请提供 trace ID。",
 export function publicError(err: unknown, componentId?: string): BeError {
   if (!isBeError(err)) return new BeError("INTERNAL", "INTERNAL", { domain: "be" });
   const domain = err.domain ?? componentId;
-  if (HIDDEN_CODES.has(err.code) || !domain) return new BeError(HIDDEN_CODES.has(err.code) ? err.code : "INTERNAL", "INTERNAL", { domain: "be" });
+  // a reasonless error (a dependency's answer without a problem body or status details) has no identity a
+  // caller could look up: it leaves as INTERNAL (spec gap, reported)
+  if (HIDDEN_CODES.has(err.code) || !domain || err.reason === "") return new BeError(HIDDEN_CODES.has(err.code) ? err.code : "INTERNAL", "INTERNAL", { domain: "be" });
   return err.withDomain(domain);
 }
 

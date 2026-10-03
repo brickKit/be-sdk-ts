@@ -53,4 +53,9 @@ describe("Readiness (P1.4)", () => {
     r.unmet("bundle");
     expect(r.state().ok).toBe(true);
   });
+  it("accepts conditions added before it was first asked", () => {
+    const r = new Readiness([]);
+    r.require("db_identity");
+    expect(r.state()).toEqual({ ok: false, waiting: ["db_identity"] });
+  });
 });

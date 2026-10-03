@@ -1,0 +1,24 @@
+apiVersion: brickkit/v1
+kind: Component
+metadata: {id: sdktest/basic, version: 3.0.0}
+configSchema:
+  type: object
+  properties:
+    PG_HOST: {type: string}
+    PG_PORT: {type: integer, default: 5432}
+    PG_DATABASE: {type: string}
+    PG_USER: {type: string}
+    PG_PASSWORD_FILE: {type: string, secret: true, mount: file}
+    PG_OWNER_USER: {type: string}
+    PG_OWNER_PASSWORD_FILE: {type: string, secret: true, mount: file}
+    PG_SCHEMA: {type: string}
+    PG_POOL_MAX: {type: integer, default: 10}
+    EVENT_BUS_URL: {type: string}
+    NATS_URL: {type: string}
+    EVENTS_MAX_DELIVER: {type: integer, default: 8}
+    EVENTS_BACKOFF: {type: string, default: "1s,10s,1m,5m,15m,30m,1h"}
+  required: [PG_HOST, PG_DATABASE, PG_USER, PG_PASSWORD_FILE, PG_OWNER_USER, PG_OWNER_PASSWORD_FILE, PG_SCHEMA]
+deployment: {port: 0, protocol: http}
+events:
+  publishes: [sdktest.basic.thing.created.v1, sdktest.basic.thing.renamed.v1]
+  subscribes: [sdktest.basic.thing.created.v1]

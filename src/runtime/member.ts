@@ -5,7 +5,14 @@ import { metrics } from "@opentelemetry/api";
 import type { Logger } from "pino";
 import type { Config } from "../config/config.js";
 import type { Manifest } from "../config/manifest.js";
-import { componentCatalog } from "../errors/catalog.js";
+import { componentCatalog, type ErrorCatalog } from "../errors/catalog.js";
+import { EventContracts } from "../events/contracts.js";
+import { EventsRuntime } from "../events/runtime.js";
+import { buildGrpcServer, type GrpcServer } from "../grpc/server.js";
+import { GrpcClients } from "../grpc/clients.js";
+import { Store } from "../store/store.js";
+import type { TxExtensions } from "../store/tx.js";
+import { checkDatabase } from "./database.js";
 import { buildHttpServer, type HttpServer } from "../http/server.js";
 import { errorFields } from "../log/logger.js";
 import { newMemberRegistry, type MemberRegistry } from "../obs/metrics.js";
@@ -36,6 +43,13 @@ export class Member {
   private readonly info: InfoState = { ports: {}, migrations: { component: null, platform: null }, degraded: [], capabilities: [] };
   private module: Module | undefined;
   private readonly stopHooks: (() => Promise<void>)[] = [];
+  private readonly catalog: ErrorCatalog;
+  private readonly txExtensions: TxExtensions = {};
+  private store: Store | undefined;
+  private grpcServer: GrpcServer | undefined;
+  private events: EventsRuntime | undefined;
+  /** called when background work finds a fatal condition (P1.8); main exits non-zero */
+  onFatal: (why: string) => void = () => {};
 
   constructor(o: { spec: Spec; manifest: Manifest; config: Config; version: string; logger: Logger; platform: Platform }) {
     this.spec = o.spec;
@@ -48,9 +62,16 @@ export class Member {
     this.metrics = newMemberRegistry(this.id);
     this.telemetry = o.platform.telemetry.member(this.id, this.version);
     this.supervisor = new Supervisor(this.logger);
+    this.catalog = componentCatalog(this.id, o.spec.contracts ? `${o.spec.contracts}/errors.yaml` : undefined);
+    if ("PG_SCHEMA" in o.manifest.properties) {
+      this.store = new Store({ memberId: this.id, config: o.config, logger: o.logger, metrics: this.metrics, extensions: this.txExtensions });
+    }
+    const store = this.store;
     this.rt = new Runtime({
       id: this.id, version: this.version, config: o.config, logger: o.logger, tracer: this.telemetry.tracer,
-      meter: metrics.getMeterProvider().getMeter(this.id, this.version), registry: this.metrics.registry,
+      meter: metrics.getMeterProvider().getMeter(this.id, this.version), metrics: this.metrics,
+      grpc: new GrpcClients({ memberId: this.id, config: o.config, metrics: this.metrics }),
+      store: store ? () => store : undefined,
     });
     for (const s of o.config.allSecrets()) {
       s.watch({
@@ -62,10 +83,10 @@ export class Member {
       });
     }
     this.http = buildHttpServer({
-      memberId: this.id, locale: o.config.string("DEFAULT_LOCALE", "zh-CN") ?? "zh-CN",
-      catalog: componentCatalog(this.id, o.spec.contracts ? `${o.spec.contracts}/errors.yaml` : undefined),
+      memberId: this.id, locale: localeOf(o.config),
+      catalog: this.catalog,
       logger: this.logger, metrics: this.metrics, tracer: this.telemetry.tracer,
-      defaultTimeoutMs: o.config.duration("HTTP_DEFAULT_TIMEOUT", 10_000),
+      defaultTimeoutMs: o.config.orDefault("HTTP_DEFAULT_TIMEOUT", (c) => c.duration("HTTP_DEFAULT_TIMEOUT", 10_000), 10_000),
       auth: { verifier: o.platform.verifier, bundle: o.platform.bundle },
       ops: { readiness: () => this.readiness.state(), info: () => buildInfo(this.manifest, this.version, this.info) },
     });
@@ -84,7 +105,10 @@ export class Member {
   async init(): Promise<void> {
     this.module = await withTimeout(this.spec.create(this.rt), INIT_TIMEOUT_MS, "create");
     this.module.http?.(this.http.router);
+    if (this.module.grpc) this.mountGrpc(this.module.grpc);
     if (this.http.router.protectedRoutes > 0) this.watchBundle();
+    if (this.store) this.watchDatabase(this.store);
+    this.startEvents();
     if (this.module.start) await withTimeout(this.module.start(this.supervisor.signal), INIT_TIMEOUT_MS, "start");
   }
 
@@ -97,18 +121,57 @@ export class Member {
     if (this.platform.verifier) void this.platform.verifier.warm();
   }
 
+  private mountGrpc(register: NonNullable<Module["grpc"]>): void {
+    this.grpcServer = buildGrpcServer({
+      memberId: this.id, locale: localeOf(this.config), catalog: this.catalog, logger: this.logger,
+      metrics: this.metrics, tracer: this.telemetry.tracer, maxConnectionAgeMs: this.config.orDefault("GRPC_MAX_CONNECTION_AGE", (c) => c.duration("GRPC_MAX_CONNECTION_AGE", 300_000), 300_000),
+    });
+    register(this.grpcServer);
+  }
+
+  private watchDatabase(store: Store): void {
+    this.readiness.require("db_identity");
+    this.readiness.require("migrations");
+    this.supervisor.run("be.db.probe", (signal) => checkDatabase({
+      store, ownerRole: this.config.require("PG_OWNER_USER"), migrationsDir: this.spec.migrations, shell: false,
+      logger: this.logger, metrics: this.metrics, readiness: this.readiness, fatal: (why) => this.onFatal(why),
+      report: (component, platform) => (this.info.migrations = { component, platform }),
+    }, signal));
+    this.onStop(() => store.close());
+  }
+
+  private startEvents(): void {
+    const decl = this.module?.events;
+    if (!decl || ((decl.publishes ?? []).length === 0 && (decl.subscribe ?? []).length === 0)) return;
+    if (!this.store) throw new Error("Module.events needs a database: declare the db profile (PG_SCHEMA) for the outbox and the cursor");
+    this.events = new EventsRuntime({
+      memberId: this.id, version: this.version, config: this.config, logger: this.logger, metrics: this.metrics, tracer: this.telemetry.tracer,
+      store: this.store, contracts: EventContracts.load(this.spec.contracts), declaration: decl,
+    });
+    Object.assign(this.txExtensions, this.events.extensions);
+    this.events.start(this.supervisor);
+    const events = this.events;
+    this.onStop(() => events.stop());
+  }
+
   async listen(port = this.manifest.port): Promise<string> {
     const base = await this.http.listen(port);
     this.info.ports.http = Number(new URL(base).port);
+    if (this.grpcServer && this.grpcServer.serviceCount > 0) {
+      const grpcPort = this.manifest.extraPorts.grpc;
+      if (grpcPort === undefined) throw new Error("Module.grpc registers services but component.yaml declares no extra port named grpc");
+      this.info.ports.grpc = await this.grpcServer.listen(grpcPort);
+    }
     return base;
   }
 
   /** P1.6: stop accepting, drain within SHUTDOWN_GRACE, stop background work, close what the member owns. */
   async stop(): Promise<void> {
-    const grace = this.config.duration("SHUTDOWN_GRACE", 25_000);
+    const grace = this.config.orDefault("SHUTDOWN_GRACE", (c) => c.duration("SHUTDOWN_GRACE", 25_000), 25_000);
     const deadline = Date.now() + grace;
-    await this.http.close(grace);
+    await Promise.all([this.http.close(grace), this.grpcServer?.close(Math.min(grace, 30_000))]);
     await this.supervisor.stop(Math.max(1_000, deadline - Date.now()));
+    await this.rt.close();
     for (const fn of this.stopHooks.splice(0).reverse()) await fn().catch((e) => this.logger.error(errorFields(e), "stop_hook_failed"));
     await this.module?.stop?.().catch((e) => this.logger.error(errorFields(e), "module_stop_failed"));
     for (const s of this.config.allSecrets()) s.stop();
@@ -124,4 +187,8 @@ async function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<
   } finally {
     clearTimeout(t);
   }
+}
+
+function localeOf(c: Config): string {
+  return c.orDefault("DEFAULT_LOCALE", (x) => x.string("DEFAULT_LOCALE", "zh-CN")!, "zh-CN");
 }

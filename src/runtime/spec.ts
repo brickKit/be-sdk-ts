@@ -3,6 +3,7 @@
 import type { Runtime } from "./runtime.js";
 import type { Router } from "../http/router.js";
 import type { EventsDeclaration } from "../events/types.js";
+import type { GrpcRegistrar } from "../grpc/server.js";
 
 export interface ComponentSpec {
   /** "erp/sales"; checked against COMPONENT_ID at start (exit 78 when they differ) */
@@ -31,10 +32,7 @@ export interface Module {
   stop?: () => Promise<void>;
 }
 
-/** What Module.grpc receives: the member's server, every method wrapped by the SDK's interceptor chain. */
-export interface GrpcRegistrar {
-  addService(definition: object, implementation: object, options?: { userFacing?: string[] }): void;
-}
+export type { GrpcRegistrar };
 
 export function defineComponent(spec: ComponentSpec): Spec {
   if (!/^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/.test(spec.id)) throw new Error(`not a component ID: ${spec.id}`);

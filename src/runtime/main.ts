@@ -6,6 +6,8 @@ import { Config } from "../config/config.js";
 import { ConfigErrors } from "../config/configError.js";
 import { readManifest, type Manifest } from "../config/manifest.js";
 import { errorFields, newLogger, nowRfc3339Nano } from "../log/logger.js";
+import { ensureEventsAtMigrate } from "../events/migrateStep.js";
+import { runMigrations } from "../migrate/run.js";
 import { Member } from "./member.js";
 import { Platform } from "./platform.js";
 import type { Spec } from "./spec.js";
@@ -20,6 +22,8 @@ export interface ServeHandle {
   baseUrl: string;
   member: Member;
   stop(): Promise<void>;
+  /** settles when background work found a fatal condition (P1.8): the process exits non-zero */
+  fatal: Promise<string>;
 }
 
 export type MainResult = { exitCode: number } | { handle: ServeHandle };
@@ -44,7 +48,7 @@ function line(io: MainIO, fields: Record<string, unknown>): void {
 }
 
 /** Configuration of the process: the manifest, then every key validated at once (exit 78 on any problem). */
-function loadConfig(spec: Spec, io: MainIO): { manifest: Manifest; config: Config } | undefined {
+function loadConfig(spec: Spec, io: MainIO, unreadSecrets: string[]): { manifest: Manifest; config: Config } | undefined {
   const manifest = readManifest(resolve(spec.manifest ?? "component.yaml"));
   const id = io.env.COMPONENT_ID;
   if ((id !== undefined && id !== spec.id) || (manifest.id !== "" && manifest.id !== spec.id)) {
@@ -52,7 +56,7 @@ function loadConfig(spec: Spec, io: MainIO): { manifest: Manifest; config: Confi
     return undefined;
   }
   try {
-    return { manifest, config: Config.load(manifest, io.env) };
+    return { manifest, config: Config.load(manifest, io.env, { unreadSecrets }) };
   } catch (e) {
     if (!(e instanceof ConfigErrors)) throw e;
     for (const x of e.errors) line(io, { msg: "config_invalid", component_id: spec.id, key: x.key, reason: x.reason, error: x.message });
@@ -66,22 +70,26 @@ export async function runMain(spec: Spec, io: MainIO): Promise<MainResult> {
     line(io, { msg: "usage", component_id: spec.id, error: `unknown arguments: ${io.argv.join(" ")}; expected none, migrate up|down <n>|status, or job run <name>` });
     return { exitCode: EXIT.USAGE };
   }
-  const loaded = loadConfig(spec, io);
+  // P10.12: only the migrate entry point opens the owner's password file
+  const loaded = loadConfig(spec, io, cmd.kind === "migrate" ? [] : ["PG_OWNER_PASSWORD_FILE"]);
   if (!loaded) return { exitCode: EXIT.CONFIG };
   const { manifest, config } = loaded;
   const version = io.env.COMPONENT_VERSION ?? manifest.version;
-  const logger = newLogger({ componentId: spec.id, componentVersion: version, level: (config.string("LOG_LEVEL", "info") ?? "info") as "info", destination: io.stdout });
+  const logger = newLogger({ componentId: spec.id, componentVersion: version, level: config.orDefault("LOG_LEVEL", (c) => c.string("LOG_LEVEL", "info")!, "info") as "info", destination: io.stdout });
   if (cmd.kind === "job") {
     // P14.8 is optional; jobs arrive with T5 — until then no job name is known
     logger.error({ job: cmd.name }, "job_unknown");
     return { exitCode: EXIT.USAGE };
   }
-  if (cmd.kind === "migrate") {
-    logger.error({ direction: cmd.direction }, "migrate_unavailable");
-    return { exitCode: EXIT.FAILED };
-  }
+  if (cmd.kind === "migrate") return migrate(spec, manifest, config, logger, cmd);
   const platform = new Platform(config, logger);
   const member = new Member({ spec, manifest, config, version, logger, platform });
+  let fatal!: (why: string) => void;
+  const fatalP = new Promise<string>((r) => (fatal = r));
+  member.onFatal = (why) => {
+    logger.error({ error: why }, "fatal");
+    fatal(why);
+  };
   try {
     await member.init();
   } catch (e) {
@@ -94,7 +102,26 @@ export async function runMain(spec: Spec, io: MainIO): Promise<MainResult> {
   logger.info({ url: baseUrl }, "serving");
   let stopping: Promise<void> | undefined;
   const stop = () => (stopping ??= member.stop().then(() => platform.shutdown()));
-  return { handle: { baseUrl, member, stop } };
+  return { handle: { baseUrl, member, stop, fatal: fatalP } };
+}
+
+async function migrate(spec: Spec, manifest: Manifest, config: Config, logger: ReturnType<typeof newLogger>, cmd: { direction: "up" | "down" | "status"; count?: number }): Promise<MainResult> {
+  if (!spec.migrations) {
+    logger.info("this component has no migrations directory");
+    return { exitCode: EXIT.OK };
+  }
+  try {
+    const r = await runMigrations({
+      memberId: spec.id, config, logger, migrationsDir: resolve(spec.migrations), direction: cmd.direction, count: cmd.count,
+      afterPlatform: () => ensureEventsAtMigrate(spec.id, manifest, config, logger),
+    });
+    // P1.8: a schema newer than the image is a WARN on the migrate entry point, so a rollback is not blocked
+    if (r.status === "ahead") logger.warn({ unknown: r.unknown }, "schema_ahead_of_image");
+    return { exitCode: EXIT.OK };
+  } catch (e) {
+    logger.error(errorFields(e), "migration_failed");
+    return { exitCode: EXIT.FAILED };
+  }
 }
 
 /** The component's `main`: `main(defineComponent({...}))`. Never returns. */
@@ -105,6 +132,7 @@ export function main(spec: Spec): void {
       const onSignal = () => void r.handle.stop().then(() => process.exit(EXIT.OK), () => process.exit(EXIT.FAILED));
       process.once("SIGTERM", onSignal);
       process.once("SIGINT", onSignal);
+      void r.handle.fatal.then(() => r.handle.stop().finally(() => process.exit(EXIT.FAILED)));
     },
     (e) => {
       process.stdout.write(JSON.stringify({ time: nowRfc3339Nano(), level: "error", msg: "fatal", component_id: spec.id, ...errorFields(e) }) + "\n");

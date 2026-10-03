@@ -22,15 +22,20 @@ export class Config {
   private readonly values = new Map<string, unknown>();
   private readonly secrets = new Map<string, Secret>();
   private readonly env: Readonly<Record<string, string | undefined>>;
+  private unread: ReadonlySet<string> = new Set();
 
   private constructor(declared: ReadonlySet<string>, env: Record<string, string | undefined>) {
     this.declared = declared;
     this.env = env;
   }
 
-  /** Validates every declared key; throws ConfigErrors listing all problems. */
-  static load(manifest: Manifest, env: Record<string, string | undefined>): Config {
+  /**
+   * Validates every declared key; throws ConfigErrors listing all problems. `unreadSecrets` are validated as
+   * paths but their files are not opened: the serve entry point never reads PG_OWNER_PASSWORD_FILE (P10.12).
+   */
+  static load(manifest: Manifest, env: Record<string, string | undefined>, o: { unreadSecrets?: string[] } = {}): Config {
     const c = new Config(new Set(Object.keys(manifest.properties)), { ...env });
+    c.unread = new Set(o.unreadSecrets ?? []);
     const errors: ConfigError[] = [];
     const attempt = (fn: () => void) => {
       try {
@@ -70,7 +75,7 @@ export class Config {
     const raw = this.env[key];
     const parsed = parseValue(key, spec, raw === "" && spec.default === "" ? undefined : raw);
     if (!parsed.set) return;
-    if (parsed.secretPath !== undefined) this.secrets.set(key, new Secret(key, parsed.secretPath));
+    if (parsed.secretPath !== undefined && !this.unread.has(key)) this.secrets.set(key, new Secret(key, parsed.secretPath));
     if ((FAMILY_KEYS as readonly string[]).includes(key)) familyAddress(key, parsed.value as string);
     this.values.set(key, parsed.value);
   }
@@ -89,6 +94,16 @@ export class Config {
     checkReadable(key, this.declared);
     if (isPlatformName(key) && !this.declared.has(key)) return this.env[key];
     return this.values.get(key);
+  }
+
+  /** Whether the component's configSchema declares the key (SDK code reading an optional protocol key). */
+  declares(key: string): boolean {
+    return this.declared.has(key);
+  }
+
+  /** A protocol key's value when declared, else `def` (the catalogue default): for profiles the component does not use. */
+  orDefault<T>(key: string, read: (c: Config) => T, def: T): T {
+    return this.declared.has(key) ? read(this) : def;
   }
 
   has(key: string): boolean {

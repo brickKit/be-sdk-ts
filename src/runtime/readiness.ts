@@ -6,7 +6,6 @@ export class Readiness {
 
   constructor(conditions: string[]) {
     this.waiting = new Set(conditions);
-    this.latched = this.waiting.size === 0;
   }
 
   require(condition: string): void {
@@ -24,6 +23,7 @@ export class Readiness {
   }
 
   state(): { ok: boolean; waiting: string[] } {
+    if (this.waiting.size === 0) this.latched = true;
     return this.latched ? { ok: true, waiting: [] } : { ok: false, waiting: [...this.waiting] };
   }
 }

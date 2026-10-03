@@ -13,7 +13,7 @@ export class Platform {
   readonly bundle: BundleSource | undefined;
 
   constructor(config: Config, logger: Logger) {
-    this.telemetry = Telemetry.create(config.has("OTEL_BASE_URL") ? config.string("OTEL_BASE_URL")! : "", {});
+    this.telemetry = Telemetry.create(config.orDefault("OTEL_BASE_URL", (c) => c.string("OTEL_BASE_URL", "")!, ""), {});
     const iamUrl = has(config, "IAM_URL") ? config.familyAddress("IAM_URL") : undefined;
     this.verifier = iamUrl && has(config, "IAM_ISSUER") && has(config, "TENANT_ID")
       ? new JwtVerifier({
@@ -37,9 +37,5 @@ export class Platform {
 }
 
 function has(c: Config, key: string): boolean {
-  try {
-    return c.has(key);
-  } catch {
-    return false; // not declared by this component
-  }
+  return c.declares(key) && c.has(key);
 }
