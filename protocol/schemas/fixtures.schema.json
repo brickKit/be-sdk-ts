@@ -6,6 +6,16 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "config": {
+      "description": "Values the suite sets for the component's own required configSchema keys (not protocol keys, which the suite fills itself) so the container can start; a key ending in _FILE is written to a file and its path set, as brickKit does (P2.7).",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "users": {
       "description": "Personas the fake identity provider signs tokens for, keyed by persona name.",
       "type": "object",
@@ -472,6 +482,10 @@
           "description": "A system-plane call instead of REST: pkg.Service/Method.",
           "type": "string",
           "pattern": "^[A-Za-z0-9_.]+/[A-Za-z0-9_]+$"
+        },
+        "paired_with": {
+          "description": "The operation on the other plane (REST <-> gRPC) that reaches the same resource and code path; CP-ERR-02 provokes the same error through both and compares them.",
+          "$ref": "#/$defs/via"
         },
         "as": {
           "description": "Persona name from users; absent = the suite picks one with the needed key.",

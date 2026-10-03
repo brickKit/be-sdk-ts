@@ -44,13 +44,13 @@ describe("canonical unit digest", () => {
   });
 
   it("the SQL casts every column to text in declared order and orders by the primary key, text keys bytewise", () => {
-    const sql = digestSelectSql("widgets_p20261001",
+    const sql = digestSelectSql("widgets_2026m10",
       [{ name: "id", collatable: false }, { name: "name", collatable: true }, { name: "n", collatable: false }],
       [{ name: "name", collatable: true }, { name: "id", collatable: false }]);
     expect(sql).toContain(`COALESCE(("id")::text, '\\N')`);
     expect(sql.indexOf(`("id")::text`)).toBeLessThan(sql.indexOf(`("name")::text, '\\N'`));
     expect(sql).toContain(`chr(31)`);
-    expect(sql).toContain(`FROM "widgets_p20261001"`);
+    expect(sql).toContain(`FROM "widgets_2026m10"`);
     expect(sql).toMatch(/ORDER BY "name" COLLATE "C", "id"$/);
   });
 });

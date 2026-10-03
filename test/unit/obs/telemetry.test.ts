@@ -19,6 +19,18 @@ describe("Telemetry", () => {
     await t.shutdown();
   });
 
+  it("carries service.namespace = the domain and deployment.environment.name = DEPLOY_ENV (P18.1, rc.2)", async () => {
+    const exporter = new InMemorySpanExporter();
+    const t = Telemetry.withExporter(exporter, { environment: "staging" });
+    const m = t.member("erp/sales", "3.0.0");
+    m.tracer.startSpan("x").end();
+    await m.shutdown();
+    const attrs = exporter.getFinishedSpans()[0]!.resource.attributes;
+    expect(attrs).toMatchObject({ "service.namespace": "erp", "deployment.environment.name": "staging" });
+    expect(attrs["deployment.environment"]).toBeUndefined();
+    await t.shutdown();
+  });
+
   it("spans have valid trace IDs when nothing is exported", () => {
     const t = Telemetry.create("", { namespace: "p", environment: "e" });
     const span = t.member("a/b", "1.0.0").tracer.startSpan("x");

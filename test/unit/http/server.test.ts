@@ -189,3 +189,18 @@ describe("errors (P4)", () => {
     expect(((await r.json()) as { reason: string }).reason).toBe("NOT_FOUND");
   });
 });
+
+describe("errorDomain (P4.1, rc.2 Spec.errorDomain)", () => {
+  it("a slot-family member answers its own errors with the family's ID", async () => {
+    const s = buildHttpServer({
+      memberId: "infra/iam-casdoor", errorDomain: "infra/iam", locale: "en", catalog: componentCatalog("infra/iam", undefined), logger: log.logger,
+      metrics: newMemberRegistry("infra/iam-casdoor"), tracer: Telemetry.create("", {}).member("infra/iam-casdoor", "3.0.0").tracer, defaultTimeoutMs: 10_000,
+      auth: { verifier: undefined, bundle: undefined }, ops: { readiness: () => ({ ok: true, waiting: [] }), info: () => ({}) },
+    });
+    s.router.get("/x", PUBLIC, async () => { throw beError("FAILED_PRECONDITION", "USER_DISABLED"); });
+    const b = await s.listen(0);
+    const body = (await (await fetch(`${b}/infra/iam-casdoor/x`)).json()) as Record<string, string>;
+    await s.close();
+    expect([body.domain, body.type]).toEqual(["infra/iam", "urn:be:infra/iam:USER_DISABLED"]);
+  });
+});

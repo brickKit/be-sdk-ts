@@ -38,8 +38,8 @@ describe("readWindow", () => {
 
   it("TestWindow_range_crosses_cold: RANGE_COLD with online_from, cold_ranges, thaw_allowed, export_allowed", () => {
     const cold = [
-      { unitKey: "widgets_p20200201", from: d("2020-02-01T00:00:00Z"), to: d("2020-03-01T00:00:00Z"), state: "COLD" as const },
-      { unitKey: "widgets_p20200101", from: d("2020-01-01T00:00:00Z"), to: d("2020-02-01T00:00:00Z"), state: "COLD" as const },
+      { unitKey: "widgets_2020m02", from: d("2020-02-01T00:00:00Z"), to: d("2020-03-01T00:00:00Z"), state: "COLD" as const },
+      { unitKey: "widgets_2020m01", from: d("2020-01-01T00:00:00Z"), to: d("2020-02-01T00:00:00Z"), state: "COLD" as const },
     ];
     const e = caught(() => readWindow(t.get("widgets")!, { from: d("2019-06-01T00:00:00Z") }, false, cold, now, cfg));
     expect(e.code).toBe("FAILED_PRECONDITION");

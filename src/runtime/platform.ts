@@ -13,7 +13,9 @@ export class Platform {
   readonly bundle: BundleSource | undefined;
 
   constructor(config: Config, logger: Logger) {
-    this.telemetry = Telemetry.create(config.orDefault("OTEL_BASE_URL", (c) => c.string("OTEL_BASE_URL", "")!, ""), {});
+    this.telemetry = Telemetry.create(config.orDefault("OTEL_BASE_URL", (c) => c.string("OTEL_BASE_URL", "")!, ""), {
+      environment: config.orDefault("DEPLOY_ENV", (c) => c.string("DEPLOY_ENV", "dev")!, "dev"),
+    });
     const iamUrl = has(config, "IAM_URL") ? config.familyAddress("IAM_URL") : undefined;
     this.verifier = iamUrl && has(config, "IAM_ISSUER") && has(config, "TENANT_ID")
       ? new JwtVerifier({

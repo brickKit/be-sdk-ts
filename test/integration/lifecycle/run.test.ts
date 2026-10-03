@@ -40,7 +40,7 @@ describe.each([
     for (const day of [new Date(), new Date("2030-01-15T08:00:00Z")]) {
       const m = await migratedDb(dsn, day);
       dbs.push(m.db);
-      expect(m.windows).toContain(`widgets_p${day.toISOString().slice(0, 8).replaceAll("-", "")}01`);
+      expect(m.windows).toContain(`widgets_${day.getUTCFullYear()}m${String(day.getUTCMonth() + 1).padStart(2, "0")}`);
       const s = track(newStore(m.db));
       await s.tx(async (tx) => {
         const id = randomUUID();
@@ -57,10 +57,10 @@ describe.each([
     const { engine } = newEngine(store, { now: new Date("2026-12-15T00:00:00Z") });
     const r = await engine.runOnce();
     const made = r.results.filter((x) => x.action.kind === "ensure_partition" && x.outcome === "done").map((x) => x.action.unit);
-    expect(made).toContain("widgets_p20270301");
-    const parts = await db.su(`SELECT relname FROM pg_class WHERE relname = 'widget_lines_p20270301' AND relnamespace = $1::regnamespace`, [db.schema]);
+    expect(made).toContain("widgets_2027m03");
+    const parts = await db.su(`SELECT relname FROM pg_class WHERE relname = 'widget_lines_2027m03' AND relnamespace = $1::regnamespace`, [db.schema]);
     expect(parts.rows).toHaveLength(1);
-    expect((await unitRow(db, "widgets", "widgets_p20270301"))!.state).toBe("ACTIVE");
+    expect((await unitRow(db, "widgets", "widgets_2027m03"))!.state).toBe("ACTIVE");
     const again = await engine.runOnce();
     expect(again.results.filter((x) => x.action.kind === "ensure_partition")).toEqual([]);
   });
@@ -95,7 +95,7 @@ describe.each([
     const s = track(newStore(db, pool));
     const { engine } = newEngine(s, { now: NOW });
     const r = await engine.runOnce();
-    expect(r.results.find((x) => x.action.unit === "besdk_outbox_p20260803")!.outcome).toBe("done");
+    expect(r.results.find((x) => x.action.unit === "besdk_outbox_2026w32")!.outcome).toBe("done");
     expect(await probe()).toEqual(before);
     expect(before.u).toBe(db.runtime);
     await pool.end();
@@ -142,7 +142,7 @@ describe.each([
     const { engine } = newEngine(store, { now: NOW });
     expect(await engine.window("widgets", {})).toEqual({ from: new Date("2026-07-05T12:00:00Z"), to: undefined });
     await db.su(`INSERT INTO ${db.schema}.besdk_lifecycle_units (table_name, unit_key, range_from, range_to, state)
-      VALUES ('widgets', 'widgets_p20200101', '2020-01-01Z', '2020-02-01Z', 'COLD')`);
+      VALUES ('widgets', 'widgets_2020m01', '2020-01-01Z', '2020-02-01Z', 'COLD')`);
     const e = await engine.window("widgets", { from: new Date("2019-01-01T00:00:00Z") }).catch((x: unknown) => x);
     expect(isBeError(e) && [e.reason, e.metadata.cold_ranges]).toEqual(["RANGE_COLD", "2020-01-01T00:00:00.000Z/2020-02-01T00:00:00.000Z"]);
     expect((await engine.window("widgets", { from: new Date("2021-01-01T00:00:00Z") })).from).toEqual(new Date("2021-01-01T00:00:00Z"));

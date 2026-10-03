@@ -2,24 +2,26 @@
 # The suite is conformance/component/ of brickKit/be-acceptance; this file is the catalogue it
 # implements. Case IDs are stable and append-only. `level` MUST fails the run, SHOULD warns.
 # `skippable: true` marks a case that may be skipped, with a reason in assembly.yaml
-# conformance.skip, when the component does not use the feature it tests.
+# conformance.skip, when the component does not use the feature it tests. `applies_when` marks a case that
+# applies only when its condition holds; otherwise the case is reported as not applicable (neither skipped
+# nor failed).
 # Format: schemas/conformance-cases.schema.json.
 protocol: "1.0"
 profiles:
   - { name: core,        when: "always" }
   - { name: obs,         when: "always" }
   - { name: err,         when: "always" }
-  - { name: auth,        when: "the component has any route that is not Public" }
+  - { name: auth,        when: "the component has any route that is not Public (an operation without x-be-permission counts, unless x-be-internal)" }
   - { name: scope,       when: "data_scopes is not none, or resources is declared" }
   - { name: grpc,        when: "an extra port is named grpc" }
   - { name: outbound,    when: "dependencies.components is not empty" }
   - { name: events-pub,  when: "component.yaml events.publishes is not empty (the subjects of the event contract)" }
   - { name: events-sub,  when: "component.yaml events.subscribes is not empty (the subjects of fixtures events.consumes)" }
   - { name: idempotency, when: "any write accepts idempotency_key or Idempotency-Key" }
-  - { name: db,          when: "configSchema declares PG_SCHEMA" }
+  - { name: db,          when: "configSchema declares PG_SCHEMA or PG_HOST" }
   - { name: jobs,        when: "the component has a database" }
   - { name: lifecycle,   when: "the component has a database" }
-  - { name: blob,        when: "configSchema declares S3_BUCKET" }
+  - { name: blob,        when: "configSchema declares S3_BUCKET or S3_URL" }
   - { name: shell,       when: "component.yaml has shell.members; each member's own profiles are re-run in shell mode" }
 cases:
   # core
@@ -28,12 +30,12 @@ cases:
   - { id: CP-CORE-03, profile: core, level: MUST, tests: [P1.2, P12.13], title: "PostgreSQL, bus and authz ready after the component: it does not exit and recovers" }
   - { id: CP-CORE-04, profile: core, level: MUST, tests: [P1.3], title: "/healthz stays 200 with PostgreSQL stopped" }
   - { id: CP-CORE-05, profile: core, level: MUST, tests: [P1.4, P10.7], title: "/readyz is 503 NOT_READY with metadata.waiting until bundle, identity and migrations are in place, then 200; stopping PostgreSQL or authz afterwards leaves it 200" }
-  - { id: CP-CORE-06, profile: core, level: MUST, tests: [P1.6, P1.12], title: "SIGTERM: in-flight requests finish, exit 0 within SHUTDOWN_GRACE, before stopGracePeriodSeconds" }
+  - { id: CP-CORE-06, profile: core, level: MUST, tests: [P1.6, P1.12], title: "SIGTERM: exit 0 within SHUTDOWN_GRACE, before stopGracePeriodSeconds; in-flight requests finish (checked only when fixtures declare slow)" }
   - { id: CP-CORE-07, profile: core, level: MUST, tests: [P1.9], title: "the image has /bin/sh and wget" }
   - { id: CP-CORE-08, profile: core, level: MUST, tests: [P3.5], title: "slow request headers are disconnected" }
   - { id: CP-CORE-09, profile: core, level: MUST, tests: [P3.6], title: "a body above the limit answers 413 BODY_TOO_LARGE" }
   - { id: CP-CORE-10, profile: core, level: MUST, tests: [P3.2], title: "X-Request-Id echoed, generated when absent" }
-  - { id: CP-CORE-11, profile: core, level: MUST, tests: [P3.1, P3.12, P20.2, P20.3, P20.4], title: "/_be/info matches the manifests and the container" }
+  - { id: CP-CORE-11, profile: core, level: MUST, tests: [P3.1, P3.12, P20.2, P20.3, P20.4], title: "/_be/info matches the manifests and the container; its profiles equal the selected set exactly" }
   - { id: CP-CORE-12, profile: core, level: MUST, tests: [P1.11, P1.12, P7.14], title: "component.yaml declares healthCheck /healthz, readinessCheck /readyz, stopGracePeriodSeconds >= SHUTDOWN_GRACE + 5 s and the port protocols" }
   - { id: CP-CORE-13, profile: core, level: MUST, tests: [P1.13], title: "/healthz answers on 127.0.0.1 and on ::1 inside the container, and every declared port accepts IPv4 and IPv6" }
   - { id: CP-CORE-14, profile: core, level: MUST, tests: [P2.7, P2.12], title: "every secret key is mount: file and named _FILE; no secret value appears in the container's environment" }
@@ -45,8 +47,8 @@ cases:
   - { id: CP-OBS-05, profile: obs, level: MUST, tests: [P18.2], title: "LOG_LEVEL=warn writes no info lines" }
   # err
   - { id: CP-ERR-01, profile: err, level: MUST, tests: [P4.1, P4.5, P4.8], title: "every 4xx/5xx is problem+json; reason is catalogued" }
-  - { id: CP-ERR-02, profile: err, level: MUST, tests: [P4.2], title: "gRPC errors carry ErrorInfo and map to and from REST" }
-  - { id: CP-ERR-03, profile: err, level: MUST, tests: [P4.3], title: "a revoked table grant answers 500 with only generic text and trace_id; no SQL text" }
+  - { id: CP-ERR-02, profile: err, level: MUST, tests: [P4.2], applies_when: "the component has a grpc port", title: "gRPC errors carry ErrorInfo and map to and from REST (operations paired by fixtures paired_with)" }
+  - { id: CP-ERR-03, profile: err, level: MUST, tests: [P4.3], applies_when: "the component has a database", title: "a revoked table grant answers 500 with only generic text and trace_id; no SQL text" }
   - { id: CP-ERR-04, profile: err, level: MUST, tests: [P4.4, P4.7], title: "every reason seen during the run is catalogued" }
   # auth
   - { id: CP-AUTH-01, profile: auth, level: MUST, tests: [P5.1], title: "no token answers 401 TOKEN_INVALID" }
@@ -57,10 +59,10 @@ cases:
   - { id: CP-AUTH-06, profile: auth, level: MUST, tests: [P5.3], title: "missing exp answers 401" }
   - { id: CP-AUTH-07, profile: auth, level: MUST, tests: [P5.4], title: "JWKS rotation; an unknown kid triggers a refetch" }
   - { id: CP-AUTH-08, profile: auth, level: MUST, tests: [P5.6], title: "a stale token answers 401 token_stale" }
-  - { id: CP-AUTH-09, profile: auth, level: MUST, tests: [P6.2], title: "every OpenAPI operation has a guard; without a token every non-Public one answers 401" }
-  - { id: CP-AUTH-10, profile: auth, level: MUST, tests: [P1.5, P6.2], title: "before the first bundle, protected routes answer 503 AUTHZ_NOT_READY" }
+  - { id: CP-AUTH-09, profile: auth, level: MUST, tests: [P6.2, P3.16], title: "every OpenAPI operation has a guard (x-be-permission, or x-be-internal); without a token every non-Public one answers 401" }
+  - { id: CP-AUTH-10, profile: auth, level: MUST, tests: [P1.5, P6.2], title: "before the first bundle, every non-Public route answers 401 TOKEN_INVALID without a valid token, otherwise 503 AUTHZ_NOT_READY" }
   - { id: CP-AUTH-11, profile: auth, level: MUST, tests: [P6.2], title: "a missing key answers 403 MISSING_PERMISSION with metadata.permission" }
-  - { id: CP-AUTH-12, profile: auth, level: MUST, tests: [P5.5, P6.2], title: "act.kind=agent with agents=false answers 401 UNSUPPORTED_DELEGATION" }
+  - { id: CP-AUTH-12, profile: auth, level: MUST, tests: [P5.5, P6.2], title: "act.kind=agent with agents=false answers 401 UNSUPPORTED_DELEGATION; a stale delegated token answers TOKEN_STALE first" }
   - { id: CP-AUTH-13, profile: auth, level: MUST, tests: [P6.1], title: "authz stopped after the first bundle: decisions continue (fail-static)" }
   # scope
   - { id: CP-SCOPE-01, profile: scope, level: MUST, tests: [P6.3, P6.5], title: "own / dept / subtree / all matrix" }
@@ -81,7 +83,7 @@ cases:
   # grpc
   - { id: CP-RPC-01, profile: grpc, level: MUST, tests: [P7.2], title: "no be-caller answers UNAUTHENTICATED MISSING_CALLER" }
   - { id: CP-RPC-02, profile: grpc, level: MUST, tests: [P7.2, P7.4], title: "system-call logs carry caller" }
-  - { id: CP-RPC-03, profile: grpc, level: MUST, tests: [P7.3], title: "a user-facing rpc over gRPC answers UNAUTHENTICATED" }
+  - { id: CP-RPC-03, profile: grpc, level: MUST, tests: [P7.3], title: "a user-facing rpc over gRPC answers UNAUTHENTICATED / TOKEN_INVALID" }
   - { id: CP-RPC-04, profile: grpc, level: MUST, tests: [P7.5], title: "a 5 MiB request is refused" }
   - { id: CP-RPC-05, profile: grpc, level: MUST, tests: [P7.5], title: "GOAWAY after MaxConnectionAge; the client reconnects transparently" }
   - { id: CP-RPC-06, profile: grpc, level: MUST, skippable: true, tests: [P7.10], title: "BatchGet above its limit answers BATCH_TOO_LARGE with BadRequest" }
@@ -99,7 +101,7 @@ cases:
   - { id: CP-EVP-02, profile: events-pub, level: MUST, tests: [P12.1], title: "bus stopped, command succeeds, bus back: delivered exactly once" }
   - { id: CP-EVP-03, profile: events-pub, level: MUST, tests: [P12.1, P10.9], title: "two replicas: each outbox row published once" }
   - { id: CP-EVP-04, profile: events-pub, level: MUST, tests: [P12.1, P12.4], title: "a missing stream is created with defaults; an existing one is not changed" }
-  - { id: CP-EVP-05, profile: events-pub, level: MUST, tests: [P12.2], title: "payloads pass the contract; above the limit fails clearly" }
+  - { id: CP-EVP-05, profile: events-pub, level: MUST, tests: [P12.2], title: "payloads pass the contract; a payload above 64 KiB is refused at publish" }
   - { id: CP-EVP-06, profile: events-pub, level: MUST, tests: [P12.16], title: "events.publishes equals the event contract's subjects, and every subject published during the run is in it" }
   # events-sub
   - { id: CP-EVS-01, profile: events-sub, level: MUST, tests: [P12.5, P12.9], title: "durable name and parameters; events published while offline are received" }
@@ -123,8 +125,8 @@ cases:
   # db
   - { id: CP-DB-01, profile: db, level: MUST, tests: [P10.1, P10.2, P10.7, P11.2, P11.5], title: "every profile passes under a random identity (separate owner and runtime roles); every table owned by PG_OWNER_USER; nothing outside the schema" }
   - { id: CP-DB-02, profile: db, level: MUST, tests: [P10.3, P10.4, P3.4], title: "the suite holds a lock: the component answers 409 LOCK_TIMEOUT within lock_timeout" }
-  - { id: CP-DB-03, profile: db, level: MUST, tests: [P10.5], title: "under full load the connections with application_name = the component ID stay <= PG_POOL_MAX" }
-  - { id: CP-DB-04, profile: db, level: MUST, tests: [P11.3], title: "besdk_* tables match the reference DDL column for column" }
+  - { id: CP-DB-03, profile: db, level: MUST, tests: [P10.5], title: "under full load the connections with application_name = the component ID stay <= PG_POOL_MAX; an idle component keeps a session named <ID>@<version>" }
+  - { id: CP-DB-04, profile: db, level: MUST, tests: [P11.3], title: "besdk_* tables match the reference DDL column for column; the authz projection tables exist exactly when resources are declared" }
   - { id: CP-DB-05, profile: db, level: MUST, tests: [P10.12, P10.1], title: "while the service runs (migrations done) no session is logged in as PG_OWNER_USER, and partition upkeep still works" }
   - { id: CP-DB-06, profile: db, level: MUST, tests: [P2.9, P10.5], title: "PG_USER's password changed and its file replaced while running: within 30 s new connections use it, with no restart and no failed request" }
   # jobs
@@ -135,7 +137,7 @@ cases:
   - { id: CP-JOBS-05, profile: jobs, level: MUST, tests: [P1.7, P14.2], title: "pg_terminate_backend during a run: the job restarts, the process stays up" }
   - { id: CP-JOBS-06, profile: jobs, level: MUST, tests: [P14.8, P1.1], title: "only when /_be/info lists job_run: two concurrent job run of one cron job run the slot once and both exit 0, with the in-process copy disabled; an unknown job name exits 64" }
   # lifecycle
-  - { id: CP-LIFE-01, profile: lifecycle, level: MUST, tests: [P16.6, P11.3], title: "a freshly migrated database accepts a write at once" }
+  - { id: CP-LIFE-01, profile: lifecycle, level: MUST, tests: [P16.6, P11.3, P16.10], title: "a freshly migrated database accepts a write at once" }
   - { id: CP-LIFE-02, profile: lifecycle, level: MUST, tests: [P16.3], title: "a range before the online bound answers RANGE_COLD" }
   - { id: CP-LIFE-03, profile: lifecycle, level: MUST, tests: [P16.4, P16.8], title: "every _lifecycle endpoint is mounted; unimplemented ones answer 501" }
   - { id: CP-LIFE-04, profile: lifecycle, level: MUST, tests: [P16.1, P11.11, P15.5], title: "lifecycle.yaml passes the schema and covers every table" }

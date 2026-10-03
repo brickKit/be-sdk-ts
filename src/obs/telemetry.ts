@@ -10,9 +10,9 @@ import { BasicTracerProvider, BatchSpanProcessor, type ReadableSpan, type SpanEx
 import { hostname } from "node:os";
 
 export interface TelemetryOptions {
-  /** service.namespace (the project); omitted when empty */
+  /** service.namespace; default the member's domain (the first segment of its ID, P18.1) */
   namespace?: string;
-  /** deployment.environment; omitted when empty */
+  /** deployment.environment.name = DEPLOY_ENV (default "dev", P18.1) */
   environment?: string;
 }
 
@@ -67,8 +67,8 @@ export class Telemetry {
 
   member(componentId: string, version: string): MemberTelemetry {
     const attrs: Record<string, string> = { "service.name": componentId, "service.version": version, "service.instance.id": hostname() };
-    if (this.opts.namespace) attrs["service.namespace"] = this.opts.namespace;
-    if (this.opts.environment) attrs["deployment.environment"] = this.opts.environment;
+    attrs["service.namespace"] = this.opts.namespace || componentId.split("/")[0]!;
+    attrs["deployment.environment.name"] = this.opts.environment || "dev";
     const resource = resourceFromAttributes(attrs);
     const processors = this.exporter ? [new BatchSpanProcessor(new MemberExporter(this.exporter), { scheduledDelayMillis: 1000 })] : [];
     const provider = new BasicTracerProvider({ resource, spanProcessors: processors });

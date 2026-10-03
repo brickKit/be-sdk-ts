@@ -34,7 +34,6 @@
       "type": "object",
       "required": [
         "subject",
-        "x-aggregate-type",
         "payload"
       ],
       "additionalProperties": false,
@@ -57,6 +56,11 @@
         },
         "x-transaction-document": {
           "description": "true when the event is about a transaction document: the payload requires legal_entity_id, the runtime sets ce-legalentity from it, and a consumer dead-letters the event when it is missing (P11.8).",
+          "type": "boolean",
+          "default": false
+        },
+        "x-signal": {
+          "description": "true marks a best-effort signal (a poke, P12.10): published with a core publish (NATS) or NOTIFY (PostgreSQL queue), never through the outbox, never stored or redelivered, no durable, and not listed in component.yaml events.publishes (P12.16). A signal declares no x-aggregate-type.",
           "type": "boolean",
           "default": false
         },
@@ -114,7 +118,29 @@
             }
           }
         }
-      ]
+      ],
+      "if": {
+        "properties": {
+          "x-signal": {
+            "const": true
+          }
+        },
+        "required": [
+          "x-signal"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "x-aggregate-type"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "x-aggregate-type"
+        ]
+      }
     },
     "claim_check": {
       "description": "A claim check for content above 64 KiB (P12.2, P17.3): a payload field of this shape, $ref'd from the event's payload schema as https://github.com/brickKit/be-protocol/schemas/events-contract.schema.json#/$defs/claim_check. A consumer obtains a short-lived URL from the producer's rpc, never from the bucket.",

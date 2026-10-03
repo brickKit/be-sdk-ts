@@ -12,8 +12,8 @@ import { legalEntityOf } from "./envelope.js";
 import type { EventInput } from "./types.js";
 
 const INSERT = `INSERT INTO besdk_outbox
-  (id, created_at, subject, aggregate_type, aggregate_id, aggregate_version, occurred_at, traceparent, causation_id, hop_count, headers, payload)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`;
+  (id, created_at, subject, aggregate_type, aggregate_id, aggregate_version, occurred_at, traceparent, causation_id, hop_count, headers, payload, tracestate)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`;
 
 export interface OutboxWriter {
   publishes: ReadonlySet<string>;
@@ -46,6 +46,6 @@ export async function insertOutbox(tx: Tx, e: { subject: string; aggregateType: 
   const id = newId();
   await tx.query(INSERT, [
     id, idTime(id), e.subject, e.aggregateType, e.aggregateId, e.version.toString(), new Date(), carrier.traceparent ?? "",
-    causationId, hopCount, JSON.stringify(e.legalEntity ? { "ce-legalentity": e.legalEntity } : {}), e.payloadJson,
+    causationId, hopCount, JSON.stringify(e.legalEntity ? { "ce-legalentity": e.legalEntity } : {}), e.payloadJson, carrier.tracestate ?? "",
   ]);
 }

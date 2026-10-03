@@ -46,7 +46,7 @@ describe("_lifecycle routes", () => {
     const app = Fastify();
     for (const r of LIFECYCLE_ROUTES) app.route({ method: r.method, url: `/erp/sales${r.path}`, handler: async (req) => ({ op: r.operationId, params: req.params }) });
     const hit = async (method: "GET" | "POST" | "DELETE", url: string) => (await app.inject({ method, url })).json();
-    expect(await hit("POST", "/erp/sales/_lifecycle/units/widgets/widgets_p20261001:thaw")).toEqual({ op: "thawUnit", params: { table: "widgets", unit: "widgets_p20261001" } });
+    expect(await hit("POST", "/erp/sales/_lifecycle/units/widgets/widgets_2026m10:thaw")).toEqual({ op: "thawUnit", params: { table: "widgets", unit: "widgets_2026m10" } });
     expect(await hit("POST", "/erp/sales/_lifecycle/destructions/d1:approve")).toEqual({ op: "approveDestruction", params: { destruction_id: "d1" } });
     expect((await hit("DELETE", "/erp/sales/_lifecycle/holds/h1")).op).toBe("releaseHold");
     expect((await hit("GET", "/erp/sales/_lifecycle/units?table=widgets")).op).toBe("listUnits");

@@ -61,7 +61,7 @@ describe.each([
     expect(r.results.find((x) => x.action.kind === "seal" && x.action.unit === jan)!.outcome).toBe("done");
     const u = await unitRow(db, "widgets", jan);
     expect(u).toMatchObject({ state: "SEALED", rows: "151", blocked_reason: null });
-    const lines = await unitRow(db, "widget_lines", "widget_lines_p20240101");
+    const lines = await unitRow(db, "widget_lines", "widget_lines_2024m01");
     expect(lines!.state).toBe("SEALED");
     // an independent encoding of the follower's unit: declared order, text output (UTC), 0x1F between fields
     const enc = `${lineId}\x1f2024-01-10 00:00:00+00\x1f${(await db.su(`SELECT widget_id::text AS w FROM ${db.schema}.widget_lines`)).rows[0].w}\x1f1\x1fline 'one'\x1f1.500000`;

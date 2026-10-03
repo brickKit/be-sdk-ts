@@ -27,7 +27,7 @@ describe("envelope vectors", () => {
         {
           id: i.row.id, subject: i.row.subject, aggregateType: i.row.aggregate_type, aggregateId: i.row.aggregate_id,
           aggregateVersion: i.row.aggregate_version, occurredAt: i.row.occurred_at, traceparent: i.row.traceparent,
-          causationId: i.row.causation_id, hopCount: i.row.hop_count, payloadJson: i.row.payload_json,
+          causationId: i.row.causation_id, hopCount: i.row.hop_count, payloadJson: i.row.payload_json, tracestate: i.row.tracestate,
         },
         { transactionDocument: i.contract?.transaction_document === true },
       ),

@@ -56,4 +56,10 @@ export function logLevel(code: string): LogLevel {
   return "info";
 }
 
+/** P4.6 / P3.10: the level of a request's access-log line, from its code (vectors errors/levels access_log_level). */
+export function accessLogLevel(code: string): Exclude<LogLevel, "none"> {
+  const l = logLevel(code);
+  return l === "none" ? "info" : l;
+}
+
 export const HIDDEN_CODES: ReadonlySet<string> = new Set(["INTERNAL", "UNKNOWN", "DATA_LOSS"]);

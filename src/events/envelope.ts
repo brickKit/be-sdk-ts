@@ -21,7 +21,12 @@ export interface OutboxRow {
   causationId: string;
   hopCount: number;
   payloadJson: string;
+  /** W3C tracestate of the producing span; sent when not empty */
+  tracestate?: string;
 }
+
+/** P12.2: a payload above 64 KiB is refused at publish (a claim check carries larger content). */
+export const MAX_PAYLOAD_BYTES = 64 << 10;
 
 export function legalEntityOf(payloadJson: string): string | undefined {
   try {
@@ -35,6 +40,7 @@ export function legalEntityOf(payloadJson: string): string | undefined {
 export function envelopeHeaders(p: Producer, r: OutboxRow, contract: { transactionDocument: boolean }): Record<string, string> {
   const id = parseId(r.id);
   validateSubject(r.subject);
+  if (Buffer.byteLength(r.payloadJson) > MAX_PAYLOAD_BYTES) throw new SpecError("PAYLOAD_TOO_LARGE", "a payload above 64 KiB: send a claim check (P12.2)");
   const version = BigInt(r.aggregateVersion);
   if (version < 1n) throw new SpecError("ENVELOPE_INVALID", "the aggregate version starts at 1");
   const le = legalEntityOf(r.payloadJson);
@@ -56,5 +62,6 @@ export function envelopeHeaders(p: Producer, r: OutboxRow, contract: { transacti
   if (r.causationId) h["ce-causationid"] = r.causationId;
   if (le !== undefined) h["ce-legalentity"] = le;
   if (r.traceparent) h.traceparent = r.traceparent;
+  if (r.tracestate) h.tracestate = r.tracestate;
   return Object.fromEntries(Object.entries(h).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }

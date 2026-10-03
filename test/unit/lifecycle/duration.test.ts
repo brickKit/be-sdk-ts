@@ -48,7 +48,7 @@ describe("partition grains (UTC boundaries)", () => {
 
   it("a window is the current period and `ahead` more, named <table>_p<YYYYMMDD of the lower bound>", () => {
     const w = rangeWindow("widgets", "month", 3, d("2026-10-03T12:00:00Z"));
-    expect(w.map((p) => p.name)).toEqual(["widgets_p20261001", "widgets_p20261101", "widgets_p20261201", "widgets_p20270101"]);
+    expect(w.map((p) => p.name)).toEqual(["widgets_2026m10", "widgets_2026m11", "widgets_2026m12", "widgets_2027m01"]);
     expect(w[3]!.to.toISOString()).toBe("2027-02-01T00:00:00.000Z");
   });
 });

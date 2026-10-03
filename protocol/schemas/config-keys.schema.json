@@ -11,7 +11,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["name", "type", "format", "required", "default", "secret", "shared", "profiles", "ref", "description"],
+        "required": ["name", "type", "format", "required", "default", "secret", "shared", "shell", "profiles", "ref", "description"],
         "additionalProperties": false,
         "properties": {
           "name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$", "not": { "pattern": "_ENDPOINT$" } },
@@ -21,10 +21,11 @@
           "json_schema": { "type": "string" },
           "schemes": { "type": "array", "items": { "type": "string" } },
           "required": { "type": "boolean" },
-          "one_of": { "description": "Exactly one of these keys must be set.", "type": "array", "items": { "type": "string" }, "minItems": 2 },
+          "one_of": { "description": "At least one of these keys must be set (an empty value counts as not set, P2.3).", "type": "array", "items": { "type": "string" }, "minItems": 2 },
           "default": { "type": ["string", "null"] },
           "default_from": { "description": "When absent, take this other key's value.", "type": "string" },
           "shell_default": { "type": "string" },
+          "shell": { "description": "Whose value a shell uses (P19.3): process = the shell's own, one per process, and every member's value must equal it; member = each member's own value. be-ops reads the shell key set from this field.", "enum": ["process", "member"] },
           "secret": { "type": "boolean" },
           "mount": { "description": "brickKit configSchema mount: every secret key is delivered as a file (P2.12).", "const": "file" },
           "shared": { "type": "boolean" },

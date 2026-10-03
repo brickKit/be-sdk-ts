@@ -30,14 +30,14 @@ describe("outbox partition window (P16.6)", () => {
   });
   it("is the current week and two ahead, named by their first day", () => {
     const w = outboxWindow(new Date("2026-10-03T12:00:00Z"));
-    expect(w.map((p) => p.name)).toEqual(["besdk_outbox_p20260928", "besdk_outbox_p20261005", "besdk_outbox_p20261012"]);
+    expect(w.map((p) => p.name)).toEqual(["besdk_outbox_2026w40", "besdk_outbox_2026w41", "besdk_outbox_2026w42"]);
     expect(w[0]!.from.toISOString()).toBe("2026-09-28T00:00:00.000Z");
     expect(w[0]!.to.toISOString()).toBe("2026-10-05T00:00:00.000Z");
     expect(w[2]!.to.toISOString()).toBe("2026-10-19T00:00:00.000Z");
   });
   it("crosses a year boundary", () => {
     const w = outboxWindow(new Date("2026-12-31T08:00:00Z"));
-    expect(w.map((p) => p.name)).toEqual(["besdk_outbox_p20261228", "besdk_outbox_p20270104", "besdk_outbox_p20270111"]);
+    expect(w.map((p) => p.name)).toEqual(["besdk_outbox_2026w53", "besdk_outbox_2027w01", "besdk_outbox_2027w02"]);
   });
 });
 
@@ -57,5 +57,16 @@ describe("SQL migration loader", () => {
   it("honours the -- be:no-transaction header (P11.4)", () => {
     expect(sqlActions("-- be:no-transaction\n-- Up Migration\nCREATE INDEX CONCURRENTLY i ON t (id);\n").noTransaction).toBe(true);
     expect(sqlActions("-- Up Migration\n-- be:no-transaction\nSELECT 1;\n").noTransaction).toBe(false);
+  });
+});
+
+import { rangePartition } from "../../../src/migrate/window.js";
+
+describe("partition names (P16.10)", () => {
+  it("are <parent>_<ISO week-year>w<WW>, <parent>_<YYYY>m<MM>, <parent>_<YYYY> from the lower bound", () => {
+    expect(rangePartition("besdk_outbox", "week", new Date("2026-09-28T00:00:00Z")).name).toBe("besdk_outbox_2026w40");
+    expect(rangePartition("t", "week", new Date("2024-12-30T00:00:00Z")).name).toBe("t_2025w01");
+    expect(rangePartition("t", "month", new Date("2026-03-01T00:00:00Z")).name).toBe("t_2026m03");
+    expect(rangePartition("t", "year", new Date("2027-01-01T00:00:00Z")).name).toBe("t_2027");
   });
 });

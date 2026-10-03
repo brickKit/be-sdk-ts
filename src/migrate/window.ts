@@ -28,7 +28,6 @@ export function weekStartUtc(d: Date): Date {
   return new Date(day.getTime() - sinceMonday * DAY_MS);
 }
 
-const ymd = (d: Date) => d.toISOString().slice(0, 10).replaceAll("-", "");
 
 export type Grain = "week" | "month" | "year";
 
@@ -46,9 +45,28 @@ export function grainAdd(d: Date, grain: Grain, n: number): Date {
   return new Date(Date.UTC(d.getUTCFullYear() + n, 0, 1));
 }
 
-/** The partition of `parent` for the period starting at `from`: named <parent>_p<YYYYMMDD>. */
+/** ISO 8601 week-year and week of a date (UTC). */
+export function isoWeek(d: Date): { year: number; week: number } {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  t.setUTCDate(t.getUTCDate() + 3 - ((t.getUTCDay() + 6) % 7)); // the Thursday of this week decides the year
+  return { year: t.getUTCFullYear(), week: 1 + Math.floor((t.getTime() - Date.UTC(t.getUTCFullYear(), 0, 1)) / WEEK_MS) };
+}
+
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** P16.10: <parent>_<ISO week-year>w<WW>, <parent>_<YYYY>m<MM> or <parent>_<YYYY>, from the lower bound. */
+export function partitionName(parent: string, grain: Grain, from: Date): string {
+  if (grain === "week") {
+    const w = isoWeek(from);
+    return `${parent}_${w.year}w${two(w.week)}`;
+  }
+  if (grain === "month") return `${parent}_${from.getUTCFullYear()}m${two(from.getUTCMonth() + 1)}`;
+  return `${parent}_${from.getUTCFullYear()}`;
+}
+
+/** The partition of `parent` for the period starting at `from` (P16.10 name). */
 export function rangePartition(parent: string, grain: Grain, from: Date): RangePartition {
-  return { name: `${parent}_p${ymd(from)}`, from, to: grainAdd(from, grain, 1) };
+  return { name: partitionName(parent, grain, from), from, to: grainAdd(from, grain, 1) };
 }
 
 /** The current period of `grain` and `ahead` more, oldest first (P16.6). */
@@ -59,11 +77,7 @@ export function rangeWindow(parent: string, grain: Grain, ahead: number, now: Da
 
 /** The current week and `ahead` more, oldest first. */
 export function outboxWindow(now: Date, ahead = 2, parent = OUTBOX_TABLE): RangePartition[] {
-  const start = weekStartUtc(now).getTime();
-  return Array.from({ length: ahead + 1 }, (_, i) => {
-    const from = new Date(start + i * WEEK_MS);
-    return { name: `${parent}_p${ymd(from)}`, from, to: new Date(from.getTime() + WEEK_MS) };
-  });
+  return rangeWindow(parent, "week", ahead, now);
 }
 
 // Bounds (epoch ms) of the existing partitions of a RANGE table, read from their partition expressions

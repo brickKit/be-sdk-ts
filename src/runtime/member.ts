@@ -70,9 +70,9 @@ export class Member {
     this.metrics = newMemberRegistry(this.id);
     this.telemetry = o.platform.telemetry.member(this.id, this.version);
     this.supervisor = new Supervisor(this.logger);
-    this.catalog = componentCatalog(this.id, o.spec.contracts ? `${o.spec.contracts}/errors.yaml` : undefined);
+    this.catalog = componentCatalog(o.spec.errorDomain ?? this.id, o.spec.contracts ? `${o.spec.contracts}/errors.yaml` : undefined);
     if ("PG_SCHEMA" in o.manifest.properties) {
-      this.store = new Store({ memberId: this.id, config: o.config, logger: o.logger, metrics: this.metrics, extensions: this.txExtensions });
+      this.store = new Store({ memberId: this.id, version: this.version, config: o.config, logger: o.logger, metrics: this.metrics, extensions: this.txExtensions });
     }
     const store = this.store;
     this.rt = new Runtime({
@@ -91,7 +91,7 @@ export class Member {
       });
     }
     this.http = buildHttpServer({
-      memberId: this.id, locale: localeOf(o.config),
+      memberId: this.id, errorDomain: o.spec.errorDomain, locale: localeOf(o.config),
       catalog: this.catalog,
       logger: this.logger, metrics: this.metrics, tracer: this.telemetry.tracer,
       defaultTimeoutMs: o.config.orDefault("HTTP_DEFAULT_TIMEOUT", (c) => c.duration("HTTP_DEFAULT_TIMEOUT", 10_000), 10_000),
@@ -209,7 +209,7 @@ export class Member {
 
   private mountGrpc(register: NonNullable<Module["grpc"]>): void {
     this.grpcServer = buildGrpcServer({
-      memberId: this.id, locale: localeOf(this.config), catalog: this.catalog, logger: this.logger,
+      memberId: this.id, errorDomain: this.spec.errorDomain, locale: localeOf(this.config), catalog: this.catalog, logger: this.logger,
       metrics: this.metrics, tracer: this.telemetry.tracer, maxConnectionAgeMs: this.config.orDefault("GRPC_MAX_CONNECTION_AGE", (c) => c.duration("GRPC_MAX_CONNECTION_AGE", 300_000), 300_000),
     });
     register(this.grpcServer);

@@ -18,7 +18,7 @@ const CLAIM = `UPDATE besdk_outbox SET status = 'SENDING', claimed_until = now()
    SELECT id, created_at FROM besdk_outbox
     WHERE (status = 'PENDING' AND next_attempt_at <= now()) OR (status = 'SENDING' AND claimed_until < now())
     ORDER BY created_at, id LIMIT ${BATCH} FOR UPDATE SKIP LOCKED)
- RETURNING id, created_at, subject, aggregate_type, aggregate_id, aggregate_version, occurred_at, traceparent, causation_id, hop_count, payload::text AS payload_json, attempts`;
+ RETURNING id, created_at, subject, aggregate_type, aggregate_id, aggregate_version, occurred_at, traceparent, tracestate, causation_id, hop_count, payload::text AS payload_json, attempts`;
 const DONE = `UPDATE besdk_outbox SET status = 'PUBLISHED', published_at = now(), claimed_until = NULL, last_error = '' WHERE id = ANY($1::uuid[])`;
 const FAILED = `UPDATE besdk_outbox SET status = 'PENDING', claimed_until = NULL, next_attempt_at = now() + make_interval(secs => $2), last_error = $3 WHERE id = $1`;
 const STATS = `SELECT count(*)::int AS pending, coalesce(extract(epoch FROM now() - min(created_at)), 0)::float8 AS oldest FROM besdk_outbox WHERE status <> 'PUBLISHED'`;
@@ -31,6 +31,7 @@ interface Row {
   aggregate_version: string;
   occurred_at: Date;
   traceparent: string;
+  tracestate: string;
   causation_id: string;
   hop_count: number;
   payload_json: string;
@@ -93,7 +94,7 @@ export class OutboxPump {
       { componentId: this.d.memberId, version: this.d.version, eventsFile: contract?.file ?? "unknown.events.json" },
       {
         id: r.id, subject: r.subject, aggregateType: r.aggregate_type, aggregateId: r.aggregate_id, aggregateVersion: r.aggregate_version,
-        occurredAt: formatCeTime(r.occurred_at.toISOString()), traceparent: r.traceparent, causationId: r.causation_id, hopCount: r.hop_count, payloadJson: r.payload_json,
+        occurredAt: formatCeTime(r.occurred_at.toISOString()), traceparent: r.traceparent, tracestate: r.tracestate, causationId: r.causation_id, hopCount: r.hop_count, payloadJson: r.payload_json,
       },
       { transactionDocument: false },
     );

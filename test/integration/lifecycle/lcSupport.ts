@@ -1,13 +1,12 @@
 // Shared set-up of the lifecycle integration tests: a throwaway schema migrated with the conformance widget's
 // tables and lifecycle.yaml (the platform migration's afterPlatform hook creates the component tables' window,
 // as the runtime will), a Store as the runtime role, and an engine whose events are captured.
+import { partitionName } from "../../../src/migrate/window.js";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { LifecycleEngine } from "../../../src/lifecycle/engine.js";
 import { runMigrations } from "../../../src/migrate/index.js";
-import { ensureLifecycleWindows } from "../../../src/migrate/window.js";
 import { newMemberRegistry } from "../../../src/obs/metrics.js";
-import { quoteIdent } from "../../../src/store/sql.js";
 import { Store } from "../../../src/store/index.js";
 import type { PoolLike } from "../../../src/store/types.js";
 import { captureLogger } from "../../support/capture.js";
@@ -21,30 +20,14 @@ export interface Emitted {
   payload: Record<string, unknown>;
 }
 
-export async function windowHook(client: pg.Client, schema: string, now: Date): Promise<string[]> {
-  await client.query("BEGIN");
-  try {
-    await client.query(`SET LOCAL search_path TO ${quoteIdent(schema)}`);
-    const made = await ensureLifecycleWindows((sql, params) => client.query(sql, params).then((r) => r.rows), WIDGET_MIGRATIONS, now);
-    await client.query("COMMIT");
-    return made;
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  }
-}
-
 /** A migrated widget schema; `now` is the migration's day (default: today). */
 export async function migratedDb(dsn: string, now = new Date()): Promise<{ db: TestDb; windows: string[] }> {
   const db = await createTestDb(dsn);
-  let windows: string[] = [];
-  await runMigrations({
-    memberId: MEMBER, config: db.config(), logger: captureLogger(MEMBER).logger, migrationsDir: WIDGET_MIGRATIONS, direction: "up",
-    afterPlatform: async (c) => {
-      windows = await windowHook(c, db.schema, now);
-    },
+  // the platform step creates the declared tables' window itself (P16.6)
+  const r = await runMigrations({
+    memberId: MEMBER, config: db.config(), logger: captureLogger(MEMBER).logger, migrationsDir: WIDGET_MIGRATIONS, direction: "up", now: () => now,
   });
-  return { db, windows };
+  return { db, windows: r.partitionsCreated.filter((p) => !p.startsWith("besdk_outbox_")) };
 }
 
 export function newStore(db: TestDb, pool?: PoolLike): Store {
@@ -66,7 +49,8 @@ export function newEngine(store: Store, o: { now?: Date; dataLifecycle?: object 
 
 /** Creates a RANGE partition as the owner (a period the window no longer covers, for tests of older data). */
 export async function ownerPartition(db: TestDb, table: string, from: string, to: string): Promise<string> {
-  const name = `${table}_p${from.slice(0, 10).replaceAll("-", "")}`;
+  const days = (Date.parse(to) - Date.parse(from)) / 86_400_000;
+  const name = partitionName(table, days === 7 ? "week" : days > 31 ? "year" : "month", new Date(from)); // P16.10
   await db.asOwner(`SELECT besdk_ensure_range_partition('${table}', '${name}', '${from}', '${to}')`);
   return name;
 }

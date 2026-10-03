@@ -13,6 +13,8 @@ export interface ComponentSpec {
   migrations?: string;
   /** directory of contracts/ (errors.yaml, events/*.events.json) */
   contracts?: string;
+  /** the domain of the component's own errors; default `id`. A slot-family member gives its family's ID (P4.1) */
+  errorDomain?: string;
   /** the image's component.yaml; default `component.yaml` in the working directory */
   manifest?: string;
   create: (rt: Runtime) => Promise<Module>;

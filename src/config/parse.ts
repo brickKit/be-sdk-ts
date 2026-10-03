@@ -23,9 +23,9 @@ const URL_RE = /^([a-z][a-z0-9+.-]*):\/\/([^\s/@]+@)?(\[[0-9A-Fa-f:.]+\]|[^\s/:?
 export function parseValue(key: string, spec: KeySpec, raw: string | undefined): Parsed {
   const format = ALIASES[spec.format] ?? spec.format;
   if (spec.secret) return parseSecretPath(key, spec, raw);
-  const empty = raw === undefined || (raw === "" && format !== "string");
-  if (!empty) return { set: true, value: convert(key, format, raw, spec) };
-  if (spec.default !== undefined && spec.default !== null && !(spec.default === "" && format !== "string")) {
+  // P2.3 (rc.2): an empty value counts as not set for every type, strings included; so does an empty default
+  if (raw !== undefined && raw !== "") return { set: true, value: convert(key, format, raw, spec) };
+  if (spec.default !== undefined && spec.default !== null && spec.default !== "") {
     return { set: true, value: convert(key, format, spec.default, spec) };
   }
   if (spec.required) throw new ConfigError("CONFIG_MISSING", key, "required and not set");

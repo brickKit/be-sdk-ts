@@ -25,6 +25,8 @@ import type { DbIdentity, PoolLike, TxOptions } from "./types.js";
 
 export interface StoreOptions {
   memberId: string;
+  /** the component version: sessions are named `<member ID>@<version>` (P10.2); default "0.0.0" */
+  version?: string;
   config: Config;
   logger: Logger;
   metrics: MemberRegistry;
@@ -45,6 +47,7 @@ const PG17 = 170_000;
 
 export class Store {
   readonly memberId: string;
+  private readonly version: string;
   private readonly config: Config;
   private readonly logger: Logger;
   private readonly metrics: MemberRegistry;
@@ -60,6 +63,7 @@ export class Store {
 
   constructor(o: StoreOptions) {
     this.memberId = o.memberId;
+    this.version = o.version ?? "0.0.0";
     this.config = o.config;
     this.logger = o.logger;
     this.metrics = o.metrics;
@@ -212,7 +216,7 @@ export class Store {
 
   /** pool.connect() bounded by the remaining wait; a late connection is returned to the pool. */
   private connect(waitMs: number, unit: Unit): Promise<pg.PoolClient> {
-    this.pool ??= createStandalonePool({ config: this.config, memberId: this.memberId, logger: this.logger, settings: this.settings });
+    this.pool ??= createStandalonePool({ config: this.config, memberId: this.memberId, version: this.version, logger: this.logger, settings: this.settings });
     const pending = this.pool.connect();
     return new Promise((resolve, reject) => {
       let settled = false;

@@ -72,6 +72,15 @@ describe.each([
     await pool.end();
   });
 
+  it("opens its connections named <component ID>@<version> and keeps one open while idle (P10.2, P10.5)", async () => {
+    const { store } = newStore({ PG_CONN_MAX_IDLE_TIME: "200ms" }, { version: "3.1.4" });
+    await store.tx((tx) => tx.query("SELECT 1"));
+    await new Promise((r) => setTimeout(r, 600));
+    const { rows } = await db.su(`SELECT count(*)::int AS n FROM pg_stat_activity WHERE usename = $1 AND application_name = $2`, [db.runtime, `${MEMBER}@3.1.4`]);
+    expect(rows[0].n).toBe(1);
+    await store.close();
+  });
+
   it("honours isolation, read-only and the 30 s snapshot timeout", async () => {
     const { store } = newStore();
     // a unit with a minute left: the snapshot's own 30 s cap applies, not the deadline

@@ -21,6 +21,8 @@ export const DEADLINE_FLOOR_MS = 10_000;
 
 export interface CallDeps {
   memberId: string;
+  /** the domain of the component's own errors; default memberId (P4.1) */
+  errorDomain?: string;
   locale: string;
   catalog: ErrorCatalog;
   logger: Logger;
@@ -117,7 +119,7 @@ async function serve(d: CallDeps, plan: MethodPlan, handler: UnaryHandler, self:
     status = { code: 1, details: "cancelled", metadata: new Metadata() };
     err = undefined;
   } else if (err !== undefined) {
-    status = toStatus(err, { memberId: d.memberId, locale: d.locale, catalog: d.catalog, path, requestId, traceId });
+    status = toStatus(err, { memberId: d.errorDomain ?? d.memberId, locale: d.locale, catalog: d.catalog, path, requestId, traceId });
   }
   if (status) cb(status as StatusObject & Error);
   else cb(null, reply);
@@ -165,7 +167,7 @@ function finish(d: CallDeps, plan: MethodPlan, o: Outcome): void {
   }
   let level = "info";
   if (o.err !== undefined) {
-    Object.assign(fields, errorFields(loggedError(o.err, d.memberId)));
+    Object.assign(fields, errorFields(loggedError(o.err, d.errorDomain ?? d.memberId)));
     const l = logLevel(name);
     if (l === "error" || l === "warn") level = l;
   }

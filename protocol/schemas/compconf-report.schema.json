@@ -47,7 +47,7 @@
               "additionalProperties": false,
               "properties": {
                 "id": { "type": "string", "pattern": "^CP-[A-Z]+-[0-9]{2}$" },
-                "status": { "enum": ["pass", "fail", "warn", "skipped"] },
+                "status": { "enum": ["pass", "fail", "warn", "skipped", "not_applicable"] },
                 "ms": { "type": "integer", "minimum": 0 },
                 "message": { "type": "string" }
               }

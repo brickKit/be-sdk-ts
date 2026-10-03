@@ -30,7 +30,7 @@ describe("plan: ensure partitions ahead (G1)", () => {
   it("TestEnsureAhead_window_covers_ahead: current period and `ahead` more, followers in the same action", () => {
     const a = plan(WIDGET, state(), d("2026-10-03T12:00:00Z"), cfgOf(WIDGET));
     const w = kinds(a, "ensure_partition", "widgets");
-    expect(w.map((x) => x.unit)).toEqual(["widgets_p20261001", "widgets_p20261101", "widgets_p20261201", "widgets_p20270101"]);
+    expect(w.map((x) => x.unit)).toEqual(["widgets_2026m10", "widgets_2026m11", "widgets_2026m12", "widgets_2027m01"]);
     expect(w[0]).toMatchObject({ followers: ["widget_lines"] });
     expect(kinds(a, "ensure_partition", "widget_lines")).toEqual([]);
     expect(kinds(a, "ensure_partition", "widget_jobs")).toHaveLength(3);
@@ -41,7 +41,7 @@ describe("plan: ensure partitions ahead (G1)", () => {
   it("TestEnsureAhead_existing_partition_with_another_name_is_taken_over (by boundary, never by name)", () => {
     const existing = { ...part("widgets", "month", "2026-10-01T00:00:00Z"), name: "widgets_2026_10" };
     const a = plan(WIDGET, state({ partitions: { widgets: [existing] } }), d("2026-10-03T12:00:00Z"), cfgOf(WIDGET));
-    expect(kinds(a, "ensure_partition", "widgets").map((x) => x.unit)).not.toContain("widgets_p20261001");
+    expect(kinds(a, "ensure_partition", "widgets").map((x) => x.unit)).not.toContain("widgets_2026m10");
   });
 });
 
@@ -51,7 +51,7 @@ describe("plan: seal", () => {
 
   it("all rows closed 18 months ago → seal; closed more recently → nothing yet", () => {
     const due = plan(WIDGET, state({ partitions: { widgets: [old({ stats: { rows: 3, openRows: 0, maxClosedAt: d("2026-11-30T00:00:00Z") } })] } }), now, cfgOf(WIDGET));
-    expect(kinds(due, "seal", "widgets").map((x) => x.unit)).toEqual(["widgets_p20260101"]);
+    expect(kinds(due, "seal", "widgets").map((x) => x.unit)).toEqual(["widgets_2026m01"]);
     const notYet = plan(WIDGET, state({ partitions: { widgets: [old({ stats: { rows: 3, openRows: 0, maxClosedAt: d("2027-01-15T00:00:00Z") } })] } }), now, cfgOf(WIDGET));
     expect(kinds(notYet, "seal")).toEqual([]);
   });
@@ -93,7 +93,7 @@ describe("plan: expire queue and platform partitions", () => {
 
   it("a queue partition without open rows past retention.min is expired; open rows keep it", () => {
     expect(kinds(plan(WIDGET, state({ partitions: { widget_jobs: [jobs({ stats: { rows: 0, openRows: 0 } })] } }), now, cfgOf(WIDGET)), "expire"))
-      .toEqual([{ kind: "expire", table: "widget_jobs", unit: "widget_jobs_p20260803", class: "queue" }]);
+      .toEqual([{ kind: "expire", table: "widget_jobs", unit: "widget_jobs_2026w32", class: "queue" }]);
     expect(kinds(plan(WIDGET, state({ partitions: { widget_jobs: [jobs({ stats: { rows: 4, openRows: 1 } })] } }), now, cfgOf(WIDGET)), "expire")).toEqual([]);
     const recent = part("widget_jobs", "week", "2026-09-21T00:00:00Z", { stats: { rows: 0, openRows: 0 } });
     expect(kinds(plan(WIDGET, state({ partitions: { widget_jobs: [recent] } }), now, cfgOf(WIDGET)), "expire")).toEqual([]);

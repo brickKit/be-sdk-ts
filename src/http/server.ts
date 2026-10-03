@@ -8,7 +8,7 @@ import { decide, type AuthDeps, type Guard } from "../auth/guard.js";
 import { runUnit, Unit } from "../context.js";
 import { BeError, platformError, isBeError } from "../errors/beError.js";
 import type { ErrorCatalog } from "../errors/catalog.js";
-import { logLevel } from "../errors/codes.js";
+import { accessLogLevel } from "../errors/codes.js";
 import { problemBody, publicError } from "../errors/problem.js";
 import { errorFields } from "../log/logger.js";
 import type { MemberRegistry } from "../obs/metrics.js";
@@ -22,6 +22,8 @@ export interface Readiness {
 
 export interface HttpDeps {
   memberId: string;
+  /** the domain of the component's own errors; default memberId (a slot-family member: the family's ID, P4.1) */
+  errorDomain?: string;
   locale: string;
   catalog: ErrorCatalog;
   logger: Logger;
@@ -113,12 +115,13 @@ async function decideCounted(d: HttpDeps, guard: Guard, authorization: string | 
 function sendError(d: HttpDeps, req: WithState, reply: FastifyReply, raw: unknown): void {
   const st = req[STATE];
   const err = mapFrameworkError(raw);
-  const shown = publicError(err, d.memberId);
-  if (st) st.error = isBeError(err) ? err.withDomain(d.memberId) : new BeError("INTERNAL", "INTERNAL", { domain: "be", message: String((raw as Error)?.message ?? raw), cause: raw });
+  const domain = d.errorDomain ?? d.memberId;
+  const shown = publicError(err, domain);
+  if (st) st.error = isBeError(err) ? err.withDomain(domain) : new BeError("INTERNAL", "INTERNAL", { domain: "be", message: String((raw as Error)?.message ?? raw), cause: raw });
   const ids = { path: req.url.split("?")[0]!, requestId: st?.unit.requestId ?? "", traceId: st?.span.spanContext().traceId ?? "" };
   let p;
   try {
-    p = problemBody(shown, ids, { locale: d.locale, componentId: d.memberId, catalog: d.catalog });
+    p = problemBody(shown, ids, { locale: d.locale, componentId: domain, catalog: d.catalog });
   } catch {
     p = problemBody(new BeError("INTERNAL", "INTERNAL", { domain: "be" }), ids, { locale: d.locale, catalog: d.catalog });
   }
@@ -144,12 +147,10 @@ function onResponse(d: HttpDeps, req: WithState, reply: FastifyReply): void {
   };
   if (st.unit.user) fields.sub = st.unit.user.sub;
   if (st.unit.perm) fields.perm = st.unit.perm;
-  let level = OPS.has(route) ? "debug" : "info";
-  if (st.error) {
-    Object.assign(fields, errorFields(st.error));
-    const l = logLevel(st.error.code);
-    if (l === "error" || l === "warn") level = l;
-  }
+  // P4.6 / P3.10: the access line's level comes from the answer's code; operations endpoints log at debug
+  let level: string = accessLogLevel(st.error?.code ?? "OK");
+  if (st.error) Object.assign(fields, errorFields(st.error));
+  if (OPS.has(route) && level === "info") level = "debug";
   d.logger[level as "info"](fields, "http_request");
 }
 

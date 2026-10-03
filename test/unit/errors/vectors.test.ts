@@ -3,6 +3,7 @@ import { runVectors } from "../../support/vectors.js";
 import { codeNumber, httpStatus, logLevel } from "../../../src/errors/codes.js";
 import { BeError, platformError } from "../../../src/errors/beError.js";
 import { problemBody, restoreHttp, retryAfterHeader, validateReasonName } from "../../../src/errors/problem.js";
+import { accessLogLevel } from "../../../src/errors/codes.js";
 import { classifySqlState } from "../../../src/errors/sqlstate.js";
 
 const view = (e: BeError) => ({ code: e.code, reason: e.reason || null, domain: e.domain ?? null, http: (e as { httpStatus?: number }).httpStatus ?? httpStatus(e.code, e.reason, e.domain) });
@@ -23,10 +24,11 @@ describe("errors vectors", () => {
         context: i.context ?? "none",
         componentMapping: i.component_mapping ? new BeError(i.component_mapping.code, i.component_mapping.reason, { domain: i.component_mapping.domain }) : undefined,
       });
-      return r.action === "retry" ? { action: "retry", base_delay_ms: r.baseDelayMs } : { action: "fail", ...view(r.error) };
+      if (r.action === "retry") return { action: "retry", base_delay_ms: r.baseDelayMs };
+      return { action: "fail", ...view(r.error), ...(Object.keys(r.error.metadata).length > 0 ? { metadata: r.error.metadata } : {}) };
     },
   });
-  runVectors("errors", "levels", { log_level: (i) => ({ level: logLevel(i.code) }) });
+  runVectors("errors", "levels", { log_level: (i) => ({ level: logLevel(i.code) }), access_log_level: (i) => ({ level: accessLogLevel(i.code) }) });
   runVectors("errors", "problem", {
     problem: (i, c) => {
       const e = i.error;

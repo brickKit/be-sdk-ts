@@ -11,8 +11,8 @@
 #                          google/rpc is a subset of googleapis, the interop oracle of src/grpc/statusDetails.ts
 .PHONY: sync-protocol verify-protocol test typecheck build test-integration gen-test-proto import-scan
 
-PROTOCOL_TAG  ?= v1.0.0-rc.1
-AUTHZ_TAG     ?= v2.0.0-rc.1
+PROTOCOL_TAG  ?= v1.0.0-rc.2
+AUTHZ_TAG     ?= v2.0.0-rc.2
 # a local clone is used when present (the assembly repository checks both out as submodules),
 # otherwise the GitHub repository
 PROTOCOL_REPO ?= $(firstword $(wildcard ../be-protocol) https://github.com/brickKit/be-protocol)

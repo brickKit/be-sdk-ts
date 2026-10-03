@@ -18,6 +18,8 @@ export const MAX_CONNECTION_AGE_GRACE_MS = 30_000;
 
 export interface GrpcServerDeps {
   memberId: string;
+  /** the domain of the component's own errors; default memberId (P4.1) */
+  errorDomain?: string;
   /** DEFAULT_LOCALE: the language of the status message (the problem's `detail`) */
   locale: string;
   catalog: ErrorCatalog;
