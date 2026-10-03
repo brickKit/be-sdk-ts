@@ -1,5 +1,8 @@
-# The migration tool must skip this file (P11.11, r1-06).
+# Lifecycle declaration of the test fixture (be-protocol P16, lifecycle v1). The migration tool must skip this
+# file (P11.11, r1-06).
+lifecycle: v1
+tenant_key: none
 tables:
   widgets:
-    online: forever
-    then: keep
+    class: master
+    tiers: {hot: none}

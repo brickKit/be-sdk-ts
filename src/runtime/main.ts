@@ -4,6 +4,7 @@
 import { resolve } from "node:path";
 import { Config } from "../config/config.js";
 import { ConfigError, ConfigErrors } from "../config/configError.js";
+import { LifecycleDeclarationError } from "../lifecycle/declaration.js";
 import { readManifest, type Manifest } from "../config/manifest.js";
 import { errorFields, newLogger, nowRfc3339Nano } from "../log/logger.js";
 import { ensureEventsAtMigrate } from "../events/migrateStep.js";
@@ -105,6 +106,10 @@ export async function runMain(spec: Spec, io: MainIO): Promise<MainResult> {
 function exitFor(e: unknown, logger: ReturnType<typeof newLogger>): number {
   if (e instanceof ConfigError) {
     logger.error({ key: e.key, reason: e.reason, error: e.message }, "config_invalid");
+    return EXIT.CONFIG;
+  }
+  if (e instanceof LifecycleDeclarationError) {
+    logger.error({ key: "lifecycle.yaml", table: e.table, reason: e.reason, error: e.message }, "config_invalid");
     return EXIT.CONFIG;
   }
   logger.error(errorFields(e), "init_failed");

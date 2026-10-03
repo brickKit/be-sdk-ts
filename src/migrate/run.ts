@@ -22,7 +22,7 @@ import { sleep } from "../util/sleep.js";
 import { componentStateTable, migrationLockValue, platformStateTable } from "./lockKey.js";
 import { lockHolders, openMigrationSession, takeMigrationLock } from "./session.js";
 import { SQL_ONLY_IGNORE, sqlLoaderStrategies } from "./sqlLoader.js";
-import { ensureOutboxWindow } from "./window.js";
+import { ensureLifecycleWindows, ensureOutboxWindow } from "./window.js";
 
 /** The platform migration version this SDK release applies (besdk_platform_version.version). */
 export const PLATFORM_VERSION = 1;
@@ -135,7 +135,10 @@ async function platformState(client: pg.Client, schema: string, o: MigrateOption
        WHERE besdk_platform_version.version <> EXCLUDED.version`,
       [o.memberId, PLATFORM_VERSION],
     );
-    const created = await ensureOutboxWindow((sql, params) => client.query(sql, params).then((r) => r.rows), o.now?.() ?? new Date());
+    const query = (sql: string, params?: unknown[]) => client.query(sql, params).then((r) => r.rows);
+    const now = o.now?.() ?? new Date();
+    const created = await ensureOutboxWindow(query, now);
+    created.push(...(await ensureLifecycleWindows(query, o.migrationsDir, now))); // P16.6: declared tables too
     await client.query("COMMIT");
     return created;
   } catch (e) {

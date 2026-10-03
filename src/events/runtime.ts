@@ -28,6 +28,8 @@ export interface EventsRuntimeOptions {
   store: Store;
   contracts: EventContracts;
   declaration: EventsDeclaration;
+  /** the runtime writes its own events (lifecycle, P16.7): run the pump even when the module publishes nothing */
+  runtimeEvents?: boolean;
 }
 
 /** What a consumer checks a message against: the subscription's declaration, else the shipped contract (stage-B ruling). */
@@ -68,7 +70,7 @@ export class EventsRuntime {
   /** Starts the pump and the consumers under the supervisor. */
   start(sup: Supervisor): void {
     const publishes = this.o.declaration.publishes ?? [];
-    if (publishes.length > 0) {
+    if (publishes.length > 0 || this.o.runtimeEvents) {
       sup.run("be.outbox", async (signal) => {
         const bus = await this.connect();
         for (const s of publishes) await bus.ensureStream(s);

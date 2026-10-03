@@ -15,6 +15,8 @@ import type { TxExtensions } from "../store/tx.js";
 import { checkDatabase, compareMigrations, imageMigrations } from "./database.js";
 import { businessZone, jobsOverrides } from "../jobs/config.js";
 import { JobsRuntime } from "../jobs/runtime.js";
+import type { LifecycleEngine } from "../lifecycle/engine.js";
+import { lifecycleJob, loadLifecycle, mountLifecycle } from "./lifecycle.js";
 import { migrationVersions } from "../store/probe.js";
 import { buildHttpServer, type HttpServer } from "../http/server.js";
 import { errorFields } from "../log/logger.js";
@@ -53,6 +55,7 @@ export class Member {
   private events: EventsRuntime | undefined;
   private poke: PokeSubscriber | undefined | null = null;
   private jobs: JobsRuntime | undefined;
+  private lifecycle: LifecycleEngine | undefined;
   /** called when background work finds a fatal condition (P1.8); main exits non-zero */
   onFatal: (why: string) => void = () => {};
 
@@ -110,6 +113,8 @@ export class Member {
   async init(): Promise<void> {
     this.module = await withTimeout(this.spec.create(this.rt), INIT_TIMEOUT_MS, "create");
     this.module.http?.(this.http.router);
+    const lc = this.loadLifecycle();
+    if (lc && this.platform.bundle) mountLifecycle(this.http.router, this.id, lc);
     const jobs = (this.jobs = this.buildJobs(false));
     // P14.4 (SHOULD): only where the member authorizes at all, so a component without AUTHZ_URL is not held unready
     if (jobs && this.platform.bundle) this.http.router.get("/_ops/jobs", `${this.id.replace("/", ".")}.ops`, () => jobs.ops());
@@ -131,6 +136,7 @@ export class Member {
     const jobs = new JobsRuntime({
       memberId: this.id, store: this.store, logger: this.logger, metrics: this.metrics, module: m,
       zone: businessZone(this.config), overrides: jobsOverrides(this.config), oneShot,
+      platformJobs: this.lifecycle ? [lifecycleJob(this.lifecycle, (why) => this.onFatal(why))] : [],
     });
     jobs.validate();
     Object.assign(this.txExtensions, jobs.extensions);
@@ -145,6 +151,7 @@ export class Member {
   async runJob(name: string): Promise<number> {
     try {
       this.module = await withTimeout(this.spec.create(this.rt), INIT_TIMEOUT_MS, "create");
+      this.loadLifecycle();
       const jobs = this.buildJobs(true);
       if (!jobs) return (this.logger.error({ job: name }, "job_unknown"), 64);
       if (this.module.events) this.eventsFor(this.store!);
@@ -161,6 +168,18 @@ export class Member {
       await this.telemetry.shutdown();
       await this.metrics.shutdown();
     }
+  }
+
+  /** The lifecycle engine when the component ships lifecycle.yaml (P16); tx.seal goes to it. */
+  private loadLifecycle(): LifecycleEngine | undefined {
+    if (!this.store) return undefined;
+    const lc = loadLifecycle({
+      memberId: this.id, store: this.store, logger: this.logger, config: this.config, migrationsDir: this.spec.migrations,
+      outbox: busUrl(this.config)?.startsWith("nats://") === true,
+    });
+    if (lc) this.txExtensions.seal = (tx, table, unit) => lc.sealInTx(tx, table, unit);
+    this.lifecycle = lc;
+    return lc;
   }
 
   private async schemaState(store: Store): Promise<string> {
@@ -209,7 +228,8 @@ export class Member {
 
   private startEvents(): void {
     const decl = this.module?.events;
-    if (!decl || ((decl.publishes ?? []).length === 0 && (decl.subscribe ?? []).length === 0)) return;
+    const runtimeEvents = this.lifecycle !== undefined && busUrl(this.config)?.startsWith("nats://") === true;
+    if (!runtimeEvents && (!decl || ((decl.publishes ?? []).length === 0 && (decl.subscribe ?? []).length === 0))) return;
     if (!this.store) throw new Error("Module.events needs a database: declare the db profile (PG_SCHEMA) for the outbox and the cursor");
     this.events = this.eventsFor(this.store);
     this.events.start(this.supervisor);
@@ -221,7 +241,8 @@ export class Member {
   private eventsFor(store: Store): EventsRuntime {
     const events = new EventsRuntime({
       memberId: this.id, version: this.version, config: this.config, logger: this.logger, metrics: this.metrics, tracer: this.telemetry.tracer,
-      store, contracts: EventContracts.load(this.spec.contracts), declaration: this.module!.events!,
+      store, contracts: EventContracts.load(this.spec.contracts), declaration: this.module!.events ?? {},
+      runtimeEvents: this.lifecycle !== undefined,
     });
     Object.assign(this.txExtensions, events.extensions);
     return events;

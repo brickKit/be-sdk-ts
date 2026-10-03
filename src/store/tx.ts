@@ -20,6 +20,7 @@ export interface EnqueueOptions {
 export interface TxExtensions {
   publish?: (tx: Tx, ev: unknown) => Promise<void>;
   enqueue?: (tx: Tx, kind: string, args: unknown, opts: EnqueueOptions) => Promise<void>;
+  seal?: (tx: Tx, table: string, unit: string) => Promise<unknown>;
 }
 
 export interface TxInit {
@@ -81,6 +82,16 @@ export class Tx {
     const e = this.extensions.enqueue;
     if (!e) throw platformError("CAPABILITY_UNAVAILABLE", { capability: "jobs" }, "the job queue is not available for this member");
     return e(this, kind, args, opts);
+  }
+
+  /**
+   * Seals one unit of a table in this transaction (P16, `seal: on_signal`, e.g. a period lock): `sealed`,
+   * `already_sealed`, or `blocked` with the first open row ids. Waits for the unit's step lock.
+   */
+  seal(table: string, unit: string): Promise<unknown> {
+    const s = this.extensions.seal;
+    if (!s) throw platformError("CAPABILITY_UNAVAILABLE", { capability: "lifecycle" }, "this member has no lifecycle.yaml");
+    return s(this, table, unit);
   }
 
   /** P13 two-step commands: look up, claim, complete or release an idempotency key in this transaction. */

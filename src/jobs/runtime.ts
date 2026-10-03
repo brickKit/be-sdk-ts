@@ -28,6 +28,8 @@ export interface JobsRuntimeOptions {
   zone: string;
   /** JOBS_OVERRIDES */
   overrides: Record<string, Override>;
+  /** runtime-owned jobs besides be.cleanup (be.lifecycle, …) */
+  platformJobs?: Job[];
   /** `job run`: the holder becomes `<member>/job-run:<instance>` */
   oneShot?: boolean;
   /** tests only: lease TTL (default 30 s) and queue poll (default 500 ms) */
@@ -72,7 +74,7 @@ export class JobsRuntime {
   validate(): void {
     const ov = this.o.overrides;
     const names = new Set<string>();
-    for (const job of [...(this.o.module.jobs ?? []), cleanupJob(this.o.store)]) {
+    for (const job of [...(this.o.module.jobs ?? []), cleanupJob(this.o.store), ...(this.o.platformJobs ?? [])]) {
       if (names.has(job.name)) throw new ConfigError("CONFIG_INVALID", "JOBS_OVERRIDES", `two jobs are named ${job.name}`);
       names.add(job.name);
       this.jobs.set(job.name, this.effective(job, ov[job.name] ?? {}));

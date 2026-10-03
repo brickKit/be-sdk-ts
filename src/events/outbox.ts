@@ -31,13 +31,21 @@ export async function writeOutbox(w: OutboxWriter, tx: Tx, ev: EventInput): Prom
   const payloadJson = JSON.stringify(ev.payload);
   const le = legalEntityOf(payloadJson);
   if (contract.transactionDocument && le === undefined) throw platformError("INTERNAL", undefined, `LEGAL_ENTITY_MISSING: ${ev.subject} is a transaction-document event and needs legal_entity_id`);
+  await insertOutbox(tx, { subject: ev.subject, aggregateType: contract.aggregateType, aggregateId: ev.aggregateId, version, payloadJson, legalEntity: le });
+}
+
+/**
+ * The outbox row itself: causation and hop count from the unit of work, the trace context. Also used for the
+ * runtime's own events (lifecycle, P16.7), which have no contract in the component's events file.
+ */
+export async function insertOutbox(tx: Tx, e: { subject: string; aggregateType: string; aggregateId: string; version: bigint; payloadJson: string; legalEntity?: string }): Promise<void> {
   const u = currentUnit();
   const { causationId, hopCount } = deriveCausation(u?.handling ? { kind: "event", handled: u.handling } : u?.queued ? { kind: "queued_job", job: u.queued } : { kind: "request" });
   const carrier: Record<string, string> = {};
   propagation.inject(context.active(), carrier);
   const id = newId();
   await tx.query(INSERT, [
-    id, idTime(id), ev.subject, contract.aggregateType, ev.aggregateId, version.toString(), new Date(), carrier.traceparent ?? "",
-    causationId, hopCount, JSON.stringify(le ? { "ce-legalentity": le } : {}), payloadJson,
+    id, idTime(id), e.subject, e.aggregateType, e.aggregateId, e.version.toString(), new Date(), carrier.traceparent ?? "",
+    causationId, hopCount, JSON.stringify(e.legalEntity ? { "ce-legalentity": e.legalEntity } : {}), e.payloadJson,
   ]);
 }
