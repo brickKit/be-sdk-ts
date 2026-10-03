@@ -4,6 +4,7 @@
 import type { Logger } from "pino";
 import type { Config } from "../config/config.js";
 import type { Manifest } from "../config/manifest.js";
+import { PokeSubscriber } from "../auth/poke.js";
 import { componentCatalog, type ErrorCatalog } from "../errors/catalog.js";
 import { EventContracts } from "../events/contracts.js";
 import { EventsRuntime } from "../events/runtime.js";
@@ -47,6 +48,7 @@ export class Member {
   private store: Store | undefined;
   private grpcServer: GrpcServer | undefined;
   private events: EventsRuntime | undefined;
+  private poke: PokeSubscriber | undefined | null = null;
   /** called when background work finds a fatal condition (P1.8); main exits non-zero */
   onFatal: (why: string) => void = () => {};
 
@@ -118,6 +120,17 @@ export class Member {
     void b.ready().then(() => this.readiness.met("bundle"));
     this.supervisor.run("be.authz.bundle", (signal) => b.run(signal));
     if (this.platform.verifier) void this.platform.verifier.warm();
+    this.pokes()?.on(() => b.poke());
+  }
+
+  /** The member's own subscription to the authz poke (P12.10), when the bus is NATS; created on first use. */
+  private pokes(): PokeSubscriber | undefined {
+    if (this.poke !== null) return this.poke;
+    const url = busUrl(this.config);
+    this.poke = url?.startsWith("nats://") ? new PokeSubscriber({ url, name: this.id, logger: this.logger }) : undefined;
+    const p = this.poke;
+    if (p) this.supervisor.run("be.authz.poke", (signal) => p.run(signal));
+    return p;
   }
 
   private mountGrpc(register: NonNullable<Module["grpc"]>): void {
@@ -187,6 +200,11 @@ async function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<
   } finally {
     clearTimeout(t);
   }
+}
+
+/** EVENT_BUS_URL, falling back to NATS_URL (P12.12); undefined when neither is set. */
+export function busUrl(c: Config): string | undefined {
+  return c.orDefault("EVENT_BUS_URL", (x) => x.string("EVENT_BUS_URL"), undefined) || c.orDefault("NATS_URL", (x) => x.string("NATS_URL"), undefined) || undefined;
 }
 
 function localeOf(c: Config): string {
