@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
-export const MAX_PAYLOAD_BYTES = 1 << 20;
+/** P12.2 + stage-B ruling: a payload above 64 KiB is refused at publish (content that large goes by claim check). */
+export const MAX_PAYLOAD_BYTES = 64 << 10;
 
 export interface EventContract {
   subject: string;
@@ -36,7 +37,7 @@ export class EventContracts {
         c.bySubject.set(e.subject, {
           subject: e.subject, aggregateType: e["x-aggregate-type"], transactionDocument: e["x-transaction-document"] === true, file,
           check: (payload) => {
-            if (Buffer.byteLength(JSON.stringify(payload)) > MAX_PAYLOAD_BYTES) return ["payload exceeds 1 MiB"];
+            if (Buffer.byteLength(JSON.stringify(payload)) > MAX_PAYLOAD_BYTES) return ["payload exceeds 64 KiB; send a claim check (P12.2)"];
             return validate(payload) ? [] : (validate.errors ?? []).map((x) => `${x.instancePath || "/"} ${x.message ?? "invalid"}`);
           },
         });

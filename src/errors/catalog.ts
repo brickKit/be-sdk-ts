@@ -47,9 +47,29 @@ export function langOf(locale: string): "zh" | "en" {
 
 let be: ErrorCatalog | undefined;
 
+/**
+ * Reasons ruled after be-protocol rc.1 (stage-B review: 33 → 35 reasons), used only while the pinned
+ * errors-be.yaml lacks them; the pinned file wins as soon as it carries them (rc.2).
+ */
+const RULED_AFTER_RC1: CatalogEntry[] = [
+  {
+    reason: "REQUEST_INVALID", code: "INVALID_ARGUMENT", http: 400,
+    title: { en: "Invalid request", zh: "请求无效" },
+    message: { en: "The request does not match the contract.", zh: "请求不符合接口约定。" },
+  },
+  {
+    reason: "DEPENDENCY_UNAVAILABLE", code: "UNAVAILABLE", http: 503,
+    title: { en: "Service unavailable", zh: "服务暂不可用" },
+    message: { en: "A service this one depends on cannot be reached right now. Try again shortly.", zh: "所依赖的服务暂时无法访问，请稍后再试。" },
+  },
+];
+
 /** The reserved reasons of domain `be`; read once, immutable, shared by every member. */
 export function beCatalog(): ErrorCatalog {
-  be ??= new ErrorCatalog().add("be", readProtocolYaml<CatalogFile>("schemas/errors-be.yaml"));
+  if (be) return be;
+  const file = readProtocolYaml<CatalogFile>("schemas/errors-be.yaml");
+  const pinned = new Set(file.reasons.map((r) => r.reason));
+  be = new ErrorCatalog().add("be", { reasons: [...RULED_AFTER_RC1.filter((r) => !pinned.has(r.reason)), ...file.reasons] });
   return be;
 }
 

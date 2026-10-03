@@ -4,12 +4,12 @@
 // A refusal (too little budget, bulkhead full, open transaction) answers the call without sending anything.
 import { randomUUID } from "node:crypto";
 import { context, propagation } from "@opentelemetry/api";
-import { InterceptingCall, type Interceptor, type InterceptorOptions, type NextCall, type StatusObject } from "@grpc/grpc-js";
+import { InterceptingCall, status as GrpcStatus, type Interceptor, type InterceptorOptions, type NextCall, type StatusObject } from "@grpc/grpc-js";
 import { currentUnit } from "../context.js";
 import { platformError, type BeError } from "../errors/beError.js";
 import { codeName } from "../errors/codes.js";
 import type { MemberRegistry } from "../obs/metrics.js";
-import { localStatus } from "./errors.js";
+import { localStatus, STATUS_DETAILS_KEY } from "./errors.js";
 
 export const OUTBOUND_TIMEOUT_MS = 3_000;
 export const DEADLINE_MARGIN_MS = 50;
@@ -154,6 +154,21 @@ export function metricsInterceptor(target: string, metrics: MemberRegistry): Int
 }
 
 /** P8.4: no network inside a transaction; a programming error, INTERNAL to every caller. */
+/**
+ * A transport failure (UNAVAILABLE without the callee's status details) means the dependency cannot be reached:
+ * it becomes the reserved DEPENDENCY_UNAVAILABLE with metadata.dependency (stage-B ruling). Innermost, so the
+ * metrics still count the raw code; the code itself is unchanged, so retries are unaffected.
+ */
+export function unreachableInterceptor(target: string): Interceptor {
+  return (options, next) => {
+    const status: StatusListener = (s, pass) => {
+      if (s.code !== GrpcStatus.UNAVAILABLE || s.metadata?.get(STATUS_DETAILS_KEY).length) return pass(s);
+      pass(localStatus(platformError("DEPENDENCY_UNAVAILABLE", { dependency: target }, s.details || `${target} cannot be reached`)));
+    };
+    return new InterceptingCall(next(options), { start: (md, listener, pass) => pass(md, { onReceiveStatus: status }) });
+  };
+}
+
 export const txGuardInterceptor: Interceptor = (options, next) => {
   if (currentUnit()?.inTx) return refuse(platformError("NETWORK_IN_TX", undefined, `gRPC call ${options.method_definition.path} inside a transaction`));
   return new InterceptingCall(next(options));
@@ -161,5 +176,5 @@ export const txGuardInterceptor: Interceptor = (options, next) => {
 
 /** The chain for one (member, dependency), outermost first. */
 export function clientChain(memberId: string, target: string, bulkhead: Bulkhead, metrics: MemberRegistry): Interceptor[] {
-  return [deadlineInterceptor, bulkheadInterceptor(bulkhead, target, metrics), metadataInterceptor(memberId), metricsInterceptor(target, metrics), txGuardInterceptor];
+  return [deadlineInterceptor, bulkheadInterceptor(bulkhead, target, metrics), metadataInterceptor(memberId), metricsInterceptor(target, metrics), txGuardInterceptor, unreachableInterceptor(target)];
 }

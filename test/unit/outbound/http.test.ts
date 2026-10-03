@@ -60,6 +60,10 @@ describe("UserHttp (P8.1, P8.2)", () => {
     await expect(inUnit(userUnit(), () => user().json("GET", "/problem"))).rejects.toMatchObject({ code: "FAILED_PRECONDITION", reason: "INSUFFICIENT_STOCK", domain: "erp/inventory", metadata: { available: "2" } });
     await expect(inUnit(userUnit(), () => user().json("GET", "/plain500"))).rejects.toMatchObject({ code: "UNAVAILABLE" });
   });
+  it("answers an unreachable dependency UNAVAILABLE / DEPENDENCY_UNAVAILABLE naming it", async () => {
+    const down = new UserHttp({ memberId: "sdktest/basic", dependency: "erp/inventory", address: "http://127.0.0.1:1", metrics });
+    await expect(inUnit(userUnit(), () => down.json("GET", "/x"))).rejects.toMatchObject({ code: "UNAVAILABLE", reason: "DEPENDENCY_UNAVAILABLE", domain: "be", metadata: { dependency: "erp/inventory" } });
+  });
   it("gives the call min(3 s, remaining − 50 ms) and refuses under 50 ms", async () => {
     const short = userUnit({ deadline: Date.now() + 30 } as Partial<Unit>);
     await expect(inUnit(short, () => user().json("GET", "/x"))).rejects.toMatchObject({ code: "DEADLINE_EXCEEDED", reason: "DEADLINE_BUDGET_EXHAUSTED" });

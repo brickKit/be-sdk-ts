@@ -136,7 +136,7 @@ describe.each([
     });
     expect([r, attempts]).toEqual([7, 2]);
     const retries = (await metrics.be.txRetries.get()).values;
-    expect(retries.reduce((n, v) => n + v.value, 0)).toBe(1);
+    expect(retries.map((v) => [v.labels, v.value])).toEqual([[{ sqlstate: "40001" }, 1]]); // be_tx_retries_total{sqlstate} (stage-B ruling)
   });
 
   it("gives up after 3 attempts with ABORTED / TX_CONFLICT", async () => {

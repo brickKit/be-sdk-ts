@@ -66,10 +66,10 @@ describe("connections (P7.6)", () => {
     expect((await get(authz, "family")).caller).toBe(CLIENT_ID);
   });
 
-  it("a transport failure keeps its code with no reason (nothing to relay)", async () => {
+  it("an unreachable dependency is UNAVAILABLE / DEPENDENCY_UNAVAILABLE naming it (stage-B ruling)", async () => {
     const dead = clients.client(EchoServiceClient, "sdktest/dead", protoMetadata);
     const e = await failure(unary(dead.create.bind(dead), CreateRequest.fromPartial({ id: "x" })));
-    expect(e).toMatchObject({ code: "UNAVAILABLE", reason: "" });
+    expect(e).toMatchObject({ code: "UNAVAILABLE", reason: "DEPENDENCY_UNAVAILABLE", domain: "be", metadata: { dependency: "sdktest/dead" } });
   });
 });
 

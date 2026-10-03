@@ -15,7 +15,8 @@ import { Consumer } from "./consumer.js";
 import type { EventContracts } from "./contracts.js";
 import { writeOutbox } from "./outbox.js";
 import { OutboxPump } from "./pump.js";
-import type { EventInput, EventsDeclaration } from "./types.js";
+import type { SubscriptionInfo } from "./inbound.js";
+import type { EventInput, EventsDeclaration, Subscription } from "./types.js";
 
 export interface EventsRuntimeOptions {
   memberId: string;
@@ -27,6 +28,15 @@ export interface EventsRuntimeOptions {
   store: Store;
   contracts: EventContracts;
   declaration: EventsDeclaration;
+}
+
+/** What a consumer checks a message against: the subscription's declaration, else the shipped contract (stage-B ruling). */
+export function subscriptionInfo(memberId: string, s: Pick<Subscription, "subject" | "aggregateType" | "transactionDocument">, c: { aggregateType: string; transactionDocument: boolean } | undefined): SubscriptionInfo {
+  return {
+    componentId: memberId, subject: s.subject,
+    aggregateType: s.aggregateType ?? c?.aggregateType ?? "",
+    transactionDocument: s.transactionDocument ?? c?.transactionDocument ?? false,
+  };
 }
 
 export class EventsRuntime {
@@ -73,7 +83,7 @@ export class EventsRuntime {
         const bus = await this.connect();
         const consumer = new Consumer(s, {
           ...this.o, bus, maxDeliver: maxDeliver ?? s.maxDeliver ?? 8, backoffMs: backoff ?? s.backoffMs ?? [1_000, 10_000, 60_000, 300_000, 900_000, 1_800_000, 3_600_000],
-          info: { componentId: this.o.memberId, subject: s.subject, aggregateType: c?.aggregateType ?? "", transactionDocument: c?.transactionDocument ?? false },
+          info: subscriptionInfo(this.o.memberId, s, c),
         });
         this.consumersStarted++;
         await consumer.run(signal);

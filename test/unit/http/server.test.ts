@@ -174,6 +174,13 @@ describe("errors (P4)", () => {
     expect(body.trace_id).toMatch(/^[0-9a-f]{32}$/);
     expect(log.lines.find((l) => l.level === "error" && String(l.error).includes("SELECT secret"))).toBeDefined();
   });
+  it("answers a body that does not parse 400 REQUEST_INVALID of domain be, with a catalogue title", async () => {
+    const r = await fetch(base + "/sdktest/basic/upload", { method: "POST", body: "{not json", headers: { "content-type": "application/json" } });
+    expect(r.status).toBe(400);
+    const body = (await r.json()) as Record<string, string>;
+    expect(body).toMatchObject({ code: "INVALID_ARGUMENT", reason: "REQUEST_INVALID", domain: "be" });
+    expect(body.title).toBeTruthy();
+  });
   it("answers an unknown path 404 NOT_FOUND as a problem", async () => {
     const r = await get("/nope");
     expect(r.status).toBe(404);

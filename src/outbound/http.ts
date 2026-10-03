@@ -54,7 +54,7 @@ export class UserHttp {
       if (res.status >= 400) throw await restored(res);
       return res;
     } catch (e) {
-      throw outboundError(e);
+      throw outboundError(e, this.o.dependency);
     } finally {
       leave();
     }
@@ -140,9 +140,10 @@ async function restored(res: UResponse): Promise<BeError> {
   return restoreHttp(res.status, problem);
 }
 
-function outboundError(e: unknown): unknown {
+/** A failure before any answer: the deadline, or the dependency cannot be reached (DEPENDENCY_UNAVAILABLE, stage-B ruling). */
+function outboundError(e: unknown, dependency: string): unknown {
   if (isBeError(e)) return e;
   const name = (e as { name?: string })?.name;
   if (name === "TimeoutError" || name === "AbortError") return platformError("DEADLINE_BUDGET_EXHAUSTED", undefined, "the outbound deadline passed");
-  return new BeError("UNAVAILABLE", "", { message: `user-plane call failed: ${(e as Error)?.message}`, cause: e });
+  return platformError("DEPENDENCY_UNAVAILABLE", { dependency }, `user-plane call failed: ${(e as Error)?.message}`, e);
 }

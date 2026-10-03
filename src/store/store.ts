@@ -40,7 +40,7 @@ interface Lease {
   release(destroy?: Error): void;
 }
 
-const RETRY_REASON: Record<string, string> = { "40001": "serialization_failure", "40P01": "deadlock" };
+const RETRYABLE = new Set(["40001", "40P01"]); // serialization failure, deadlock
 const PG17 = 170_000;
 
 export class Store {
@@ -93,9 +93,9 @@ export class Store {
         return await this.attempt(unit, fn, opts);
       } catch (err) {
         const state = sqlStateOf(err);
-        const retryable = state !== undefined && state in RETRY_REASON;
+        const retryable = state !== undefined && RETRYABLE.has(state);
         if (retryable && attempt < maxAttempts && !unit.signal.aborted && unit.remainingMs() > 0) {
-          this.metrics.be.txRetries.inc({ reason: RETRY_REASON[state]! });
+          this.metrics.be.txRetries.inc({ sqlstate: state });
           const base = 10 * 2 ** (attempt - 1);
           await sleep(base * (0.5 + Math.random()), unit.signal);
           continue;
@@ -245,11 +245,11 @@ export class Store {
     if (isBeError(err)) return err;
     const state = sqlStateOf(err);
     if (state === undefined) {
-      if (isConnectionError(err)) return platformError("UPSTREAM_UNAVAILABLE", undefined, "the database cannot be reached", err);
+      if (isConnectionError(err)) return platformError("DEPENDENCY_UNAVAILABLE", { dependency: "db" }, "the database cannot be reached", err);
       return err;
     }
     const context: SqlContext = unit.signal.aborted ? "cancelled" : unit.remainingMs() <= 0 ? "deadline_exceeded" : "none";
-    if (state.startsWith("08")) return platformError("UPSTREAM_UNAVAILABLE", undefined, `SQLSTATE ${state}`, err);
+    if (state.startsWith("08")) return platformError("DEPENDENCY_UNAVAILABLE", { dependency: "db" }, `SQLSTATE ${state}`, err);
     const c = classifySqlState(state, { attempt, context, cause: err });
     return c.action === "fail" ? c.error : platformError("TX_CONFLICT", undefined, `SQLSTATE ${state}`, err);
   }

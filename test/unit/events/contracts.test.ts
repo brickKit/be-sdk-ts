@@ -16,9 +16,12 @@ describe("EventContracts (P12.2)", () => {
     expect(e.check({ thing_id: "t", legal_entity_id: "LE01", amount: "1.50" })).toEqual([]);
     expect(e.check({ thing_id: "t", amount: 1.5 }).length).toBeGreaterThan(0);
   });
-  it("refuses a payload above 1 MiB", () => {
+  it("refuses a payload above 64 KiB (stage-B ruling: larger content goes by claim check)", () => {
     const e = c.get("sdktest.basic.thing.created.v1")!;
-    expect(e.check({ thing_id: "t", legal_entity_id: "LE01", amount: "1", note: "x".repeat(1 << 20) })).toEqual(["payload exceeds 1 MiB"]);
+    const base = { thing_id: "t", legal_entity_id: "LE01", amount: "1", note: "" };
+    const fill = (64 << 10) - Buffer.byteLength(JSON.stringify(base));
+    expect(e.check({ ...base, note: "x".repeat(fill) })).toEqual([]);
+    expect(e.check({ ...base, note: "x".repeat(fill + 1) })).toEqual(["payload exceeds 64 KiB; send a claim check (P12.2)"]);
   });
   it("loads an empty set when there is no contracts directory", () => {
     expect(EventContracts.load(undefined).get("a.b.c.v1")).toBeUndefined();

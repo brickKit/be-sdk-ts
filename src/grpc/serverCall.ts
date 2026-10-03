@@ -48,7 +48,7 @@ function identify(md: Metadata, plan: MethodPlan): SystemPrincipal {
   const caller = first(md, "be-caller");
   if (caller === "") throw platformError("MISSING_CALLER", undefined, "a system call without be-caller");
   if (plan.userFacing) {
-    // spec gap: P7.3 names no reason; TOKEN_INVALID is the reserved UNAUTHENTICATED reason for "no user token"
+    // P7.3 (stage-B ruling): a user-facing rpc without a user token answers TOKEN_INVALID
     throw platformError("TOKEN_INVALID", undefined, `${plan.info.method} is user-facing: it is served over REST only`);
   }
   return { caller, actorSub: first(md, "be-actor-sub"), act: first(md, "be-actor-act") };

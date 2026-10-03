@@ -20,7 +20,7 @@ function beMetrics(r: Registry) {
     outboundInflight: g("be_outbound_inflight", "outbound calls in flight", ["target"]),
     dbPoolInUse: g("be_db_pool_in_use", "connections held by this member"),
     dbPoolWait: h("be_db_pool_wait_seconds", "wait for a connection"),
-    txRetries: c("be_tx_retries_total", "transaction re-runs", ["reason"]),
+    txRetries: c("be_tx_retries_total", "transaction re-runs", ["sqlstate"]),
     dbIdentityOk: g("be_db_identity_ok", "1 when the database identity probe passed"),
     secretReloadFailures: c("be_secret_reload_failures_total", "failed re-reads of a secret file", ["key"]),
     outboxPending: g("be_outbox_pending", "outbox rows not yet published"),

@@ -6,6 +6,10 @@ export type ConsumedEvent = InboundEvent;
 
 export interface Subscription {
   subject: string;
+  /** the producer's aggregate type (x-aggregate-type); absent = from a shipped contract, else the ce-aggregatetype header */
+  aggregateType?: string;
+  /** the producer's x-transaction-document flag; absent = from a shipped contract, else false */
+  transactionDocument?: boolean;
   /** the cursor's consumer name (a projection), default "" (P12.6) */
   consumer?: string;
   /** runs inside the cursor's transaction, local writes only */
