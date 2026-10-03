@@ -77,7 +77,11 @@ beforeAll(async () => {
   });
   Object.assign(ext, events.extensions);
   const jsmClean = await import("@nats-io/transport-node").then((m) => m.connect({ servers: nats }));
-  for (const st of ["BE_SDKTEST", "BE_DLQ"]) await (await jetstreamManager(jsmClean)).streams.delete(st).catch(() => {});
+  const jsmc = await jetstreamManager(jsmClean);
+  for (const st of ["BE_SDKTEST", "BE_DLQ"]) {
+    await jsmc.streams.delete(st).catch(() => {});
+    await waitFor(async () => (await jsmc.streams.info(st).then(() => false, () => true)));
+  }
   await jsmClean.close();
   sup = new Supervisor(log.logger, { initialBackoffMs: 100 });
   events.start(sup);

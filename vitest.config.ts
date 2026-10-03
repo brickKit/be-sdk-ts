@@ -2,7 +2,8 @@ import { defineConfig } from "vitest/config";
 
 // Two projects: `unit` runs offline (vectors, pure logic, in-process servers);
 // `integration` needs the throwaway PostgreSQL / NATS containers that `make test-integration`
-// starts, and fails (never skips) when their addresses are missing.
+// starts, and fails (never skips) when their addresses are missing. Its files share streams on one NATS, so it
+// runs with --no-file-parallelism (a per-project fileParallelism is not honoured by vitest 3).
 export default defineConfig({
   test: {
     projects: [
@@ -13,7 +14,6 @@ export default defineConfig({
           include: ["test/integration/**/*.test.ts"],
           testTimeout: 60_000,
           hookTimeout: 60_000,
-          fileParallelism: false,
         },
       },
     ],

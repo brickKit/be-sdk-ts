@@ -96,6 +96,7 @@ export class JetStreamBus {
         .catch((e) => (isAlreadyExists(e) ? undefined : Promise.reject(e)));
     }
     this.streams.add(name);
+    this.logger.debug({ stream: name, existed: exists }, "stream_ensured");
   }
 
   /** Creates the durable when absent; an existing one is never updated, a drift from the constants is a WARN. */
@@ -123,7 +124,13 @@ export class JetStreamBus {
   async publish(subject: string, hdrs: Record<string, string>, data: Uint8Array, msgId: string): Promise<void> {
     const h = natsHeaders();
     for (const [k, v] of Object.entries(hdrs)) if (k !== "Nats-Msg-Id") h.set(k, v);
-    await this.js.publish(subject, data, { msgID: msgId, headers: h, timeout: 5_000 });
+    try {
+      await this.js.publish(subject, data, { msgID: msgId, headers: h, timeout: 5_000 });
+    } catch (e) {
+      // the stream may have been removed under us (no responders): check it again before the next publish
+      this.streams.delete(streamOf(subject));
+      throw e;
+    }
   }
 
   /**
@@ -184,4 +191,8 @@ function isNotFound(e: unknown): boolean {
 function isAlreadyExists(e: unknown): boolean {
   const c = apiCode(e);
   return c === 10058 || c === 10148 || c === 10013 || /already (exists|in use)/i.test(String((e as Error)?.message));
+}
+
+function streamOf(subject: string): string {
+  return subject.startsWith("dlq.") ? DLQ_STREAM : streamFor(subject).stream;
 }

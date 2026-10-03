@@ -59,7 +59,7 @@ test-integration:
 	BE_TEST_PG16=postgres://postgres:admin@127.0.0.1:$$(docker port $(PG16) 5432 | head -1 | cut -d: -f2)/postgres \
 	BE_TEST_PG14=postgres://postgres:admin@127.0.0.1:$$(docker port $(PG14) 5432 | head -1 | cut -d: -f2)/postgres \
 	BE_TEST_NATS=nats://127.0.0.1:$$(docker port $(NATS) 4222 | head -1 | cut -d: -f2) \
-	npx vitest run --project integration; rc=$$?; \
+	npx vitest run --project integration --no-file-parallelism; rc=$$?; \
 	docker rm -f $(PG16) $(PG14) $(NATS) >/dev/null; exit $$rc
 
 gen-test-proto:

@@ -22,7 +22,7 @@
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
     "test": "vitest run --project unit",
-    "test:integration": "vitest run --project integration",
+    "test:integration": "vitest run --project integration --no-file-parallelism",
     "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
