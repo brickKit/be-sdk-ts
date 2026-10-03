@@ -1,0 +1,26 @@
+{
+  "title": "sdktest/basic events",
+  "events": [
+    {
+      "subject": "sdktest.basic.thing.created.v1",
+      "x-aggregate-type": "sdktest.basic.thing",
+      "x-consumption": "state",
+      "x-transaction-document": true,
+      "payload": {
+        "type": "object",
+        "required": ["thing_id", "legal_entity_id", "amount"],
+        "properties": {
+          "thing_id": { "type": "string" },
+          "legal_entity_id": { "type": "string" },
+          "amount": { "type": "string", "pattern": "^-?[0-9]+(\\.[0-9]+)?$" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    {
+      "subject": "sdktest.basic.thing.renamed.v1",
+      "x-aggregate-type": "sdktest.basic.thing",
+      "payload": { "type": "object", "required": ["thing_id", "name"], "properties": { "thing_id": { "type": "string" }, "name": { "type": "string" } } }
+    }
+  ]
+}
