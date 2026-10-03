@@ -1,0 +1,65 @@
+# Lifecycle declaration of conformance/widget (be-protocol P16; format schemas/lifecycle.schema.json).
+# One table per class, so the lifecycle engine and the suite meet every class at least once.
+# Retention values are fixture values with stated bases, not legal advice.
+lifecycle: v1
+tenant_key: none
+tables:
+  widgets:
+    class: document
+    partition: {by: created_at, grain: month, ahead: 3}
+    closed: {column: status, in: [APPROVED, SUSPENDED], at: updated_at}
+    tiers:
+      hot: 90d                     # a list without a range reads the last 90 days
+      seal: 18mo after closed
+      cold: 5y after closed        # stays warm when no cold store is configured
+    retention:
+      min: 10y after closed
+      basis: "fixture: a business document kept 10 years after it closed"
+      end: review
+    erasure:
+      subject: user
+      key: owner_id
+      columns: {name: restrict}
+    dataset: {publish: true, exclude: [dept_path, attachments]}
+  widget_lines:
+    follows: widgets               # same partition bounds; sealed, frozen, destroyed with its widget
+  widget_ledger:
+    class: ledger
+    partition: {by: created_at, grain: month, ahead: 3}
+    tiers:
+      seal: immediate              # UPDATE / DELETE refused from the start: UNIT_SEALED
+      cold: 10y after fiscal_year_end
+    retention:
+      min: 30y after fiscal_year_end
+      basis: "fixture: an accounting ledger"
+      end: review
+  widget_audit:
+    class: audit
+    partition: {by: created_at, grain: month, ahead: 3}
+    tiers:
+      seal: immediate
+      cold: 1y after created
+    retention:
+      min: 3y after created
+      basis: "fixture: audit trail, never below 6 months"
+      end: destroy
+  widget_jobs:
+    class: queue
+    partition: {by: created_at, grain: week, ahead: 2}
+    tiers: {cold: never}
+    retention:
+      min: 30d after created
+      basis: "fixture: delivery records"
+      end: destroy               # a partition with unfinished rows (state PENDING) is never dropped
+  owner_snapshots:
+    class: snapshot              # rebuildable from conformance/peer; no retention floor
+    erasure: {subject: owner, key: owner_id, action: delete}
+  widget_kinds:
+    class: reference
+  widget_owners:
+    class: master
+    tiers: {hot: none}
+    erasure:
+      subject: user
+      key: sub
+      columns: {display_name: anonymize, phone: delete, email: delete}
