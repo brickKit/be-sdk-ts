@@ -2,7 +2,7 @@
 // key, PUBLIC or AUTHENTICATED; a route's deadline and body limit default to HTTP_DEFAULT_TIMEOUT and 1 MiB (P3.4,
 // P3.6, P3.13).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Guard } from "../auth/guard.js";
+import { PUBLIC, type Guard } from "../auth/guard.js";
 
 export interface RouteOptions {
   /** the route's deadline (x-be-deadline-seconds); orchestrating routes declare 15 s */
@@ -18,6 +18,8 @@ type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export class Router {
   private readonly app: FastifyInstance;
   readonly prefix: string;
+  /** routes that need a token: readiness then waits for the first bundle (P1.4) */
+  protectedRoutes = 0;
 
   constructor(app: FastifyInstance, memberId: string) {
     this.app = app;
@@ -43,6 +45,7 @@ export class Router {
   private add(method: Method, path: string, guard: Guard, handler: Handler, o: RouteOptions = {}): void {
     if (typeof guard !== "string" || guard === "") throw new Error(`route ${method} ${path}: a guard is required (a key, PUBLIC or AUTHENTICATED)`);
     if (!path.startsWith("/")) throw new Error(`route path ${path} must start with /`);
+    if (guard !== PUBLIC) this.protectedRoutes++;
     this.app.route({
       method,
       url: this.prefix + path,

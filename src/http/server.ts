@@ -37,7 +37,8 @@ export interface HttpServer {
   router: Router;
   /** listens on all interfaces, IPv4 and IPv6 (P1.13); returns a loopback base URL */
   listen(port: number): Promise<string>;
-  close(): Promise<void>;
+  /** stops accepting, lets in-flight requests finish within `graceMs`, then cuts what is left (P1.6) */
+  close(graceMs?: number): Promise<void>;
 }
 
 interface RequestState {
@@ -75,7 +76,7 @@ export function buildHttpServer(d: HttpDeps): HttpServer {
     app,
     router: new Router(app, d.memberId),
     listen: (port) => listenDualStack(app, port),
-    close: () => app.close(),
+    close: (graceMs = 25_000) => drain(app, graceMs),
   };
 }
 
@@ -166,4 +167,21 @@ async function listenDualStack(app: FastifyInstance, port: number): Promise<stri
   }
   const addr = app.server.address();
   return `http://127.0.0.1:${typeof addr === "object" && addr ? addr.port : port}`;
+}
+
+/**
+ * Node keeps a connection alive after a response that was in flight when close() was called, so close() alone
+ * never resolves while a client holds it (seen with Fastify 5.12 / Node 24): close idle connections as they
+ * appear, and every connection at the end of the grace period.
+ */
+async function drain(app: FastifyInstance, graceMs: number): Promise<void> {
+  const closed = app.close();
+  const tick = setInterval(() => app.server.closeIdleConnections(), 100);
+  const cut = setTimeout(() => app.server.closeAllConnections(), graceMs);
+  try {
+    await closed;
+  } finally {
+    clearInterval(tick);
+    clearTimeout(cut);
+  }
 }
