@@ -25,6 +25,9 @@ export { UserHttp, ExternalHttp } from "./outbound/http.js";
 // database
 export { Store, Tx, isLockTimeout, isUniqueViolation, type TxOptions, type Isolation, type DbIdentity } from "./store/index.js";
 
+// command idempotency
+export { idempotent, commandKey, fingerprint, type Command, type Prior } from "./idempotency/index.js";
+
 // events
 export { permanent, PermanentError, type EventInput, type EventsDeclaration, type Subscription, type ConsumedEvent } from "./events/types.js";
 

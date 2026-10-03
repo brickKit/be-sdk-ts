@@ -7,6 +7,7 @@ import type pg from "pg";
 import type { ZodType } from "zod";
 import type { Unit } from "../context.js";
 import { BeError, platformError } from "../errors/beError.js";
+import { idemClaim, idemComplete, idemLookup, idemRelease, type Command, type Prior } from "../idempotency/store.js";
 import { cancelTargetOf, sendCancel } from "./cancel.js";
 import { lockSql, prefixSql, statementTimeoutSql } from "./sql.js";
 
@@ -80,6 +81,20 @@ export class Tx {
     const e = this.extensions.enqueue;
     if (!e) throw platformError("CAPABILITY_UNAVAILABLE", { capability: "jobs" }, "the job queue is not available for this member");
     return e(this, kind, args, opts);
+  }
+
+  /** P13 two-step commands: look up, claim, complete or release an idempotency key in this transaction. */
+  idemLookup(cmd: Command): Promise<Prior> {
+    return idemLookup(this, cmd);
+  }
+  idemClaim(cmd: Command): Promise<Prior> {
+    return idemClaim(this, cmd);
+  }
+  idemComplete(cmd: Command, result: unknown): Promise<void> {
+    return idemComplete(this, cmd, result);
+  }
+  idemRelease(cmd: Command): Promise<void> {
+    return idemRelease(this, cmd);
   }
 
   /** @internal Store: the transaction is over; later statements are refused. */
