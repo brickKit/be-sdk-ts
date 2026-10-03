@@ -1,0 +1,13 @@
+// Subset of googleapis google/rpc/status.proto (Apache 2.0), used only as an interop oracle for the
+// hand-written encoder in src/grpc/statusDetails.ts: the field numbers are the upstream ones.
+syntax = "proto3";
+
+package google.rpc;
+
+import "google/protobuf/any.proto";
+
+message Status {
+  int32 code = 1;
+  string message = 2;
+  repeated google.protobuf.Any details = 3;
+}

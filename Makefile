@@ -7,7 +7,8 @@
 #   make test              typecheck + unit tests (offline: vectors, pure logic, in-process servers)
 #   make test-integration  throwaway PostgreSQL 16 / 14 and NATS 2.12 containers (prefix sdkb-ts-), the
 #                          integration tests, then removes the containers
-#   make gen-test-proto    regenerate test/gen from test/proto with ts-proto (the options every TS component uses)
+#   make gen-test-proto    regenerate test/gen from test/proto with ts-proto (the options every TS component uses);
+#                          google/rpc is a subset of googleapis, the interop oracle of src/grpc/statusDetails.ts
 .PHONY: sync-protocol verify-protocol test typecheck build test-integration gen-test-proto import-scan
 
 PROTOCOL_TAG  ?= v1.0.0-rc.1
@@ -66,7 +67,7 @@ gen-test-proto:
 	node_modules/grpc-tools/bin/protoc --plugin=protoc-gen-ts_proto=node_modules/.bin/protoc-gen-ts_proto \
 	  --ts_proto_out=test/gen \
 	  --ts_proto_opt=outputServices=grpc-js,esModuleInterop=true,outputSchema=true,importSuffix=.js,enumsAsLiterals=true \
-	  -Itest/proto -Iprotocol/proto test/proto/sdktest/v1/echo.proto
+	  -Itest/proto -Iprotocol/proto test/proto/sdktest/v1/echo.proto test/proto/google/rpc/status.proto test/proto/google/rpc/error_details.proto
 
 # be-sdk-ts depends on no component repository
 import-scan:

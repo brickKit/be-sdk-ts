@@ -1,0 +1,42 @@
+// Subset of googleapis google/rpc/error_details.proto (Apache 2.0), used only as an interop oracle for the
+// hand-written encoder in src/grpc/statusDetails.ts: the field numbers are the upstream ones.
+syntax = "proto3";
+
+package google.rpc;
+
+import "google/protobuf/duration.proto";
+
+message ErrorInfo {
+  string reason = 1;
+  string domain = 2;
+  map<string, string> metadata = 3;
+}
+
+message RetryInfo {
+  google.protobuf.Duration retry_delay = 1;
+}
+
+message PreconditionFailure {
+  message Violation {
+    string type = 1;
+    string subject = 2;
+    string description = 3;
+  }
+  repeated Violation violations = 1;
+}
+
+message BadRequest {
+  message FieldViolation {
+    string field = 1;
+    string description = 2;
+    string reason = 3;
+  }
+  repeated FieldViolation field_violations = 1;
+}
+
+message ResourceInfo {
+  string resource_type = 1;
+  string resource_name = 2;
+  string owner = 3;
+  string description = 4;
+}

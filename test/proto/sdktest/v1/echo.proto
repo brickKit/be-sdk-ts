@@ -1,0 +1,102 @@
+// Test service of be-sdk-ts's system plane (P7): idempotency levels drive the retry service config (P7.8),
+// field options drive batch limits (P7.10), and a few handlers let the tests steer failures and timing.
+syntax = "proto3";
+
+package sdktest.echo.v1;
+
+import "be/v1/limits.proto";
+
+service EchoService {
+  // A read: retried on UNAVAILABLE. The server fails the first `fail_first` attempts for an id.
+  rpc Get(GetRequest) returns (EchoReply) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // An idempotent write (it takes an idempotency key): retried on UNAVAILABLE.
+  rpc Touch(TouchRequest) returns (EchoReply) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // A write without a level: never retried by the service config.
+  rpc Create(CreateRequest) returns (EchoReply);
+  // Batch limits: ids ≤ 3 (explicit), tags ≤ 500 (default), filter.sku_ids ≤ 2 (nested message),
+  // items[].codes ≤ 2 (inside elements of a repeated message field).
+  rpc BatchGet(BatchGetRequest) returns (BatchGetReply) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Waits `ms` (or until cancelled), then answers what it saw.
+  rpc Slow(SlowRequest) returns (EchoReply) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Fails as asked: a BeError with code / reason / metadata, or a plain exception.
+  rpc Fail(FailRequest) returns (EchoReply);
+  // A user-facing rpc kept in a contract: answers UNAUTHENTICATED from the runtime (P7.3).
+  rpc Approve(TouchRequest) returns (EchoReply) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+// Streaming is not allowed (P7.11): registering this service must fail.
+service WatchService {
+  rpc Watch(GetRequest) returns (stream EchoReply);
+}
+
+message GetRequest {
+  string id = 1;
+  int32 fail_first = 2;
+}
+
+message TouchRequest {
+  string id = 1;
+  string idempotency_key = 2;
+}
+
+message CreateRequest {
+  string id = 1;
+  int32 fail_first = 2;
+}
+
+message BatchGetRequest {
+  repeated string ids = 1 [(be.v1.max_items) = 3];
+  repeated string tags = 2;
+  Filter filter = 3;
+  repeated Item items = 4 [(be.v1.max_items) = 10];
+  map<string, string> labels = 5;
+
+  message Filter {
+    repeated string sku_ids = 1 [(be.v1.max_items) = 2];
+  }
+}
+
+message Item {
+  repeated string codes = 1 [(be.v1.max_items) = 2];
+}
+
+message BatchGetReply {
+  int32 count = 1;
+}
+
+message SlowRequest {
+  int32 ms = 1;
+}
+
+message FailRequest {
+  string code = 1;
+  string reason = 2;
+  map<string, string> metadata = 3;
+  bool throw_plain = 4;
+  string message = 5;
+  string violation_field = 6;
+  int32 retry_after_ms = 7;
+}
+
+message EchoReply {
+  string id = 1;
+  string caller = 2;
+  string actor_sub = 3;
+  string actor_act = 4;
+  string request_id = 5;
+  string traceparent = 6;
+  int64 deadline_remaining_ms = 7;
+  string peer = 8;
+  int32 attempts = 9;
+  bool cancelled = 10;
+}

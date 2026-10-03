@@ -1,6 +1,7 @@
 // How a failed request becomes a problem body (P4, P3.4–P3.6): Fastify's own errors are mapped first; the
 // error handler never reads the AsyncLocalStorage (r1-08), only the request's own state.
 import { BeError, platformError, isBeError } from "../errors/beError.js";
+import { fromStatus } from "../grpc/errors.js";
 
 /** Fastify errors that are not BeErrors, mapped to protocol errors; anything else is returned unchanged. */
 export function mapFrameworkError(err: unknown): unknown {
@@ -15,5 +16,6 @@ export function mapFrameworkError(err: unknown): unknown {
     // spec gap (reported): errors-be.yaml has no reason for a body that does not parse
     return new BeError("INVALID_ARGUMENT", "MALFORMED_REQUEST", { domain: "be", message: e.message });
   }
-  return err;
+  // a dependency's gRPC status error that component code let through: relay its code, reason and domain (P4.2)
+  return fromStatus(err) ?? err;
 }
