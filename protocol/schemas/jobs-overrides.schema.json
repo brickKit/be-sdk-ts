@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/jobs-overrides.schema.json",
+  "title": "Value of JOBS_OVERRIDES",
+  "description": "Per-job overrides keyed by job name, runtime-owned be.* jobs included (be-protocol P14.5). An unknown job name is logged at WARN and ignored.",
+  "type": "object",
+  "propertyNames": { "pattern": "^[a-z][a-z0-9_.-]*$" },
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+    "minProperties": 1,
+    "properties": {
+      "interval": { "description": "Go duration, for every and singleton jobs.", "type": "string", "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$" },
+      "cron": { "description": "For cron jobs: a five-field cron expression, or @every <Go duration> of at least 1s (P14.6).", "type": "string", "pattern": "^(\\S+( \\S+){4}|@every ([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)$" },
+      "enabled": { "type": "boolean" }
+    }
+  },
+  "examples": [ { "be.cleanup": { "cron": "@every 2s" }, "widget.daily": { "enabled": false }, "be.outbox": { "interval": "200ms" } } ]
+}

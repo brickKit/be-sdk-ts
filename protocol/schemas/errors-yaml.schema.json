@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/errors-yaml.schema.json",
+  "title": "Reason catalogue (contracts/errors.yaml)",
+  "description": "A component's catalogue of error reasons (be-protocol P4.4), and the format of schemas/errors-be.yaml. Append-only: a reason is never renamed, removed or reused; it is retired with deprecated: true.",
+  "type": "object",
+  "required": ["domain", "reasons"],
+  "additionalProperties": false,
+  "properties": {
+    "domain": {
+      "description": "The component ID (<domain>/<name>), or `be` for the reserved catalogue.",
+      "type": "string",
+      "pattern": "^(be|[a-z][a-z0-9-]*/[a-z][a-z0-9-]*)$"
+    },
+    "reasons": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reason" }
+    }
+  },
+  "$defs": {
+    "reason": {
+      "type": "object",
+      "required": ["reason", "code", "http", "params", "title", "message", "since", "deprecated"],
+      "additionalProperties": false,
+      "properties": {
+        "reason": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$" },
+        "code": { "$ref": "#/$defs/grpcCode" },
+        "http": { "type": "integer", "minimum": 400, "maximum": 599 },
+        "http_also": { "description": "Other HTTP statuses the same reason is answered with; only for reasons the edge raises (UPSTREAM_UNAVAILABLE: 502 and 503).", "type": "array", "items": { "type": "integer", "minimum": 400, "maximum": 599 }, "uniqueItems": true },
+        "params": {
+          "description": "Names of the metadata keys the message template uses.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "uniqueItems": true
+        },
+        "title": { "$ref": "#/$defs/text" },
+        "message": {
+          "description": "Message template; {param} placeholders name entries of params.",
+          "$ref": "#/$defs/text"
+        },
+        "since": {
+          "description": "The component version (semver) or, for domain be, the protocol version (MAJOR.MINOR) that introduced the reason.",
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$"
+        },
+        "deprecated": { "type": "boolean" }
+      }
+    },
+    "text": {
+      "type": "object",
+      "required": ["en", "zh"],
+      "properties": {
+        "en": { "type": "string", "minLength": 1 },
+        "zh": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "grpcCode": {
+      "enum": ["CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED", "NOT_FOUND", "ALREADY_EXISTS",
+               "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION", "ABORTED", "OUT_OF_RANGE",
+               "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE", "DATA_LOSS", "UNAUTHENTICATED"]
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/problem.schema.json",
+  "title": "Problem details (application/problem+json)",
+  "description": "The body of every 4xx and 5xx REST response of a component (be-protocol P4.1): RFC 9457 problem details carrying the members of AIP-193 ErrorInfo. Unknown members are allowed by RFC 9457 and ignored by clients.",
+  "type": "object",
+  "required": ["type", "title", "status", "code", "reason", "domain", "detail", "metadata", "instance", "request_id", "trace_id"],
+  "properties": {
+    "type": {
+      "description": "urn:be:<domain>:<reason>",
+      "type": "string",
+      "pattern": "^urn:be:(be|[a-z][a-z0-9-]*/[a-z][a-z0-9-]*):[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+    "code": { "$ref": "errors-yaml.schema.json#/$defs/grpcCode" },
+    "reason": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$" },
+    "domain": { "type": "string", "pattern": "^(be|[a-z][a-z0-9-]*/[a-z][a-z0-9-]*)$" },
+    "detail": { "type": "string" },
+    "metadata": {
+      "description": "String values only (AIP-193).",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["field", "reason"],
+        "properties": {
+          "field": { "type": "string" },
+          "reason": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$" },
+          "description": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "instance": { "type": "string" },
+    "request_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" }
+  },
+  "not": { "anyOf": [ { "required": ["error"] }, { "required": ["retry_after_ms"] } ] },
+  "allOf": [
+    {
+      "if": { "properties": { "code": { "enum": ["INTERNAL", "UNKNOWN", "DATA_LOSS"] } }, "required": ["code"] },
+      "then": { "properties": { "reason": { "const": "INTERNAL" }, "domain": { "const": "be" } } }
+    },
+    {
+      "if": { "properties": { "reason": { "const": "BODY_TOO_LARGE" } }, "required": ["reason"] },
+      "then": { "properties": { "status": { "const": 413 } } }
+    }
+  ]
+}

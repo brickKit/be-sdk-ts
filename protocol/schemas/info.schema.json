@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/info.schema.json",
+  "title": "GET /_be/info",
+  "description": "A component's self-description (be-protocol P20.4). On a shell, members is an array of objects of the same shape without members. Never contains secret values.",
+  "$ref": "#/$defs/info",
+  "properties": {
+    "members": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "array", "items": { "$ref": "#/$defs/member" } }
+      ]
+    }
+  },
+  "required": ["members"],
+  "$defs": {
+    "info": {
+      "type": "object",
+      "required": ["component_id", "component_version", "protocol", "sdk", "language", "profiles", "ports", "migrations"],
+      "properties": {
+        "component_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$" },
+        "component_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$" },
+        "protocol": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+        "sdk": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object", "required": ["name", "version"], "additionalProperties": false,
+              "properties": { "name": { "enum": ["be-sdk-go", "be-sdk-python", "be-sdk-ts"] }, "version": { "type": "string" } }
+            }
+          ]
+        },
+        "language": {
+          "type": "object", "required": ["name", "version"], "additionalProperties": false,
+          "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+        },
+        "profiles": {
+          "type": "array",
+          "items": { "$ref": "conformance-cases.schema.json#/$defs/profile" },
+          "uniqueItems": true
+        },
+        "ports": {
+          "type": "object",
+          "required": ["http"],
+          "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        },
+        "tzdata": { "description": "Version of the IANA time-zone data the runtime embeds, e.g. 2026c (P11.7).", "type": "string", "pattern": "^[0-9]{4}[a-z]$" },
+        "capabilities": { "description": "Optional protocol surface the runtime offers: job_run = the entry point job run <name> (P14.8).", "type": "array", "items": { "enum": ["job_run"] }, "uniqueItems": true },
+        "degraded": { "description": "What runs in a degraded mode decided at start, e.g. calendar when mdm/org is not installed (P11.9).", "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "uniqueItems": true },
+        "migrations": {
+          "type": "object", "required": ["component", "platform"], "additionalProperties": false,
+          "properties": {
+            "component": { "description": "Newest component migration in the image, e.g. 0007.", "type": ["string", "null"] },
+            "platform": { "description": "Platform migration version (besdk_platform_version).", "type": ["integer", "null"], "minimum": 0 }
+          }
+        }
+      }
+    },
+    "member": {
+      "allOf": [ { "$ref": "#/$defs/info" } ],
+      "not": { "required": ["members"] }
+    }
+  }
+}

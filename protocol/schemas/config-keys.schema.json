@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/config-keys.schema.json",
+  "title": "Protocol configuration key catalogue",
+  "type": "object",
+  "required": ["protocol", "keys", "reserved", "secrets"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type", "format", "required", "default", "secret", "shared", "profiles", "ref", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$", "not": { "pattern": "_ENDPOINT$" } },
+          "type": { "description": "brickKit configSchema type.", "enum": ["string", "integer", "number", "boolean", "array", "object"] },
+          "format": { "enum": ["string", "int", "bool", "duration", "durations", "url", "json", "enum", "zone", "locale"] },
+          "enum": { "type": "array", "items": { "type": "string" } },
+          "json_schema": { "type": "string" },
+          "schemes": { "type": "array", "items": { "type": "string" } },
+          "required": { "type": "boolean" },
+          "one_of": { "description": "Exactly one of these keys must be set.", "type": "array", "items": { "type": "string" }, "minItems": 2 },
+          "default": { "type": ["string", "null"] },
+          "default_from": { "description": "When absent, take this other key's value.", "type": "string" },
+          "shell_default": { "type": "string" },
+          "secret": { "type": "boolean" },
+          "mount": { "description": "brickKit configSchema mount: every secret key is delivered as a file (P2.12).", "const": "file" },
+          "shared": { "type": "boolean" },
+          "profiles": { "description": "Profiles whose components declare the key; empty only together with applies_when.", "type": "array", "items": { "$ref": "conformance-cases.schema.json#/$defs/profile" } },
+          "applies_when": { "description": "For a key no profile selects (a slot-family address or a family key, P2.10, P2.11): who declares it.", "type": "string", "minLength": 1 },
+          "ref": { "type": "string", "pattern": "^P([1-9]|1[0-9]|20)\\.[1-9][0-9]*$" },
+          "description": { "type": "string" }
+        },
+        "allOf": [
+          { "if": { "properties": { "profiles": { "maxItems": 0 } } }, "then": { "required": ["applies_when"] } },
+          { "if": { "properties": { "format": { "const": "enum" } } }, "then": { "required": ["enum"] } },
+          { "if": { "properties": { "format": { "const": "json" } } }, "then": { "required": ["json_schema"] } },
+          { "if": { "properties": { "secret": { "const": true } } },
+            "then": { "required": ["mount"], "properties": { "name": { "pattern": "_FILE$" }, "type": { "const": "string" } } },
+            "else": { "not": { "required": ["mount"] }, "properties": { "name": { "not": { "pattern": "_FILE$" } } } } }
+        ]
+      }
+    },
+    "patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pattern", "type", "format", "ref", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "pattern": { "type": "string", "format": "regex" },
+          "type": { "type": "string" },
+          "format": { "type": "string" },
+          "ref": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "reserved": {
+      "type": "object",
+      "required": ["exact", "suffix"],
+      "additionalProperties": false,
+      "properties": {
+        "exact": { "type": "array", "items": { "type": "string" } },
+        "suffix": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "secrets": {
+      "description": "How secret keys are delivered (P2.7, P2.9, P2.12).",
+      "type": "object",
+      "required": ["mount", "suffix", "root", "reread_seconds"],
+      "additionalProperties": false,
+      "properties": {
+        "mount": { "const": "file" },
+        "suffix": { "const": "_FILE" },
+        "root": { "type": "string", "pattern": "^/" },
+        "reread_seconds": { "type": "integer", "minimum": 1, "maximum": 30 }
+      }
+    },
+    "retired": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["name"], "additionalProperties": false,
+        "properties": { "name": { "type": "string" }, "replaced_by": { "type": "string" }, "note": { "type": "string" } }
+      }
+    }
+  }
+}

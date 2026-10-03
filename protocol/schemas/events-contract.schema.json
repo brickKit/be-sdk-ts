@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/events-contract.schema.json",
+  "title": "Event contract file (contracts/events/<name>.events.json)",
+  "description": "A component's list of the events it publishes (be-protocol P12.2, P12.3). Additive only: a subject or a payload field is never removed, renamed, retyped or given a new meaning; a breaking change is a new subject version.",
+  "type": "object",
+  "required": [
+    "events"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "note": {
+      "type": "string"
+    },
+    "envelope": {
+      "description": "Free-form description of the envelope for human readers; the envelope itself is fixed by the protocol (schemas/envelope.schema.json).",
+      "type": "object"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "subject",
+        "x-aggregate-type",
+        "payload"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "$ref": "envelope.schema.json#/$defs/subject"
+        },
+        "x-aggregate-type": {
+          "description": "The declared aggregate type; never parsed out of the subject. All subjects of one aggregate type share one strictly increasing aggregate version.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+        },
+        "x-consumption": {
+          "description": "state (default): consumers bring a projection to the state at version v and skip older versions. sequence: reserved, not built in 1.0.",
+          "enum": [
+            "state",
+            "sequence"
+          ],
+          "default": "state"
+        },
+        "x-transaction-document": {
+          "description": "true when the event is about a transaction document: the payload requires legal_entity_id, the runtime sets ce-legalentity from it, and a consumer dead-letters the event when it is missing (P11.8).",
+          "type": "boolean",
+          "default": false
+        },
+        "grade": {
+          "description": "core: business-critical (persisted, deduplicated, may reach dead letters); peripheral: informational side events.",
+          "enum": [
+            "core",
+            "peripheral"
+          ]
+        },
+        "note": {
+          "description": "Who consumes it and why, in prose.",
+          "type": "string"
+        },
+        "payload": {
+          "description": "A JSON Schema (2020-12) for the payload object.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "object"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "x-transaction-document": {
+                "const": true
+              }
+            },
+            "required": [
+              "x-transaction-document"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "properties": {
+                  "required": {
+                    "type": "array",
+                    "contains": {
+                      "const": "legal_entity_id"
+                    }
+                  }
+                },
+                "required": [
+                  "required"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "claim_check": {
+      "description": "A claim check for content above 64 KiB (P12.2, P17.3): a payload field of this shape, $ref'd from the event's payload schema as https://github.com/brickKit/be-protocol/schemas/events-contract.schema.json#/$defs/claim_check. A consumer obtains a short-lived URL from the producer's rpc, never from the bucket.",
+      "type": "object",
+      "required": [
+        "key",
+        "sha256",
+        "size"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "The object key in the producer's own bucket.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "description": "SHA-256 of the content, lowercase hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "description": "Size of the content in bytes.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

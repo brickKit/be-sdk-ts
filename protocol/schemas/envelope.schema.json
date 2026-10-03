@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/envelope.schema.json",
+  "title": "Event envelope (CloudEvents 1.0, binary mode)",
+  "description": "The headers of one event message, as a map of lowercase header name to string value (be-protocol P12). NATS and Kafka carry them as message headers; the PostgreSQL queue stores them in be_bus.message.headers. Dead-letter messages add the be-dlq-* headers.",
+  "type": "object",
+  "required": [
+    "ce-specversion",
+    "ce-id",
+    "ce-source",
+    "ce-type",
+    "ce-time",
+    "ce-subject",
+    "content-type",
+    "ce-dataschema",
+    "ce-aggregatetype",
+    "ce-aggregateversion",
+    "ce-hopcount"
+  ],
+  "properties": {
+    "ce-specversion": {
+      "const": "1.0"
+    },
+    "ce-id": {
+      "description": "UUIDv7, = besdk_outbox.id = the broker message ID.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "ce-source": {
+      "description": "The producing component's or member's ID.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$"
+    },
+    "ce-type": {
+      "description": "The subject.",
+      "$ref": "#/$defs/subject"
+    },
+    "ce-time": {
+      "description": "occurred_at, RFC 3339 UTC.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "ce-subject": {
+      "description": "The aggregate ID.",
+      "type": "string",
+      "minLength": 1
+    },
+    "content-type": {
+      "const": "application/json"
+    },
+    "ce-dataschema": {
+      "description": "<component ID>@<version>/contracts/events/<file>#<subject>; a reference, not a URL to fetch.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*@[0-9]+\\.[0-9]+\\.[0-9]+[^/]*/contracts/events/[^#]+#[a-z0-9_.]+$"
+    },
+    "ce-aggregatetype": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+    },
+    "ce-aggregateversion": {
+      "description": "Decimal integer.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "ce-causationid": {
+      "description": "The handled event's ce-id; absent when the event came from a request.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "ce-hopcount": {
+      "description": "Decimal integer; above 10 the message is dead-lettered.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "ce-legalentity": {
+      "description": "Required on events about a transaction document.",
+      "type": "string",
+      "minLength": 1
+    },
+    "ce-sequence": {
+      "description": "Reserved for sequence mode; not set in 1.0.",
+      "type": "string"
+    },
+    "ce-tenantid": {
+      "description": "Reserved; not set in 1.0.",
+      "type": "string"
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "tracestate": {
+      "type": "string"
+    },
+    "be-dlq-reason": {
+      "type": "string"
+    },
+    "be-dlq-consumer": {
+      "description": "The durable name.",
+      "type": "string"
+    },
+    "be-dlq-delivery": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "Nats-Msg-Id": {
+      "description": "On NATS: equal to ce-id on an event; dlq:<durable>:<stream sequence> on a dead-letter message (P12.7).",
+      "type": "string"
+    }
+  },
+  "propertyNames": {
+    "pattern": "^([a-z][a-z0-9-]*|Nats-Msg-Id)$"
+  },
+  "additionalProperties": {
+    "type": "string"
+  },
+  "$defs": {
+    "subject": {
+      "description": "<domain>.<name>.<event...>.v<n>, at least four segments, each [a-z][a-z0-9]*(_[a-z0-9]+)* (P12.3); a dead-letter message keeps the original subject in ce-type and travels on dlq.<durable>.<subject>.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*(\\.[a-z][a-z0-9]*(_[a-z0-9]+)*){2,}\\.v[1-9][0-9]*$"
+    }
+  }
+}

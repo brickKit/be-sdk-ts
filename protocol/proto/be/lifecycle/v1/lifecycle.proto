@@ -1,0 +1,178 @@
+// be-protocol 1.0: the lifecycle resource contract on the system plane (P16.4).
+//
+// Mounted by the runtime in every component with a database, beside the REST form
+// /{domain}/{name}/_lifecycle/* (openapi/resource-lifecycle.yaml). A method the installed adapters
+// cannot serve answers UNIMPLEMENTED with ErrorInfo{reason: CAPABILITY_UNAVAILABLE, domain: be,
+// metadata: {capability}}. Additive only. No go_package is set (see be/v1/limits.proto).
+syntax = "proto3";
+
+package be.lifecycle.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service Lifecycle {
+  rpc ListUnits(ListUnitsRequest) returns (ListUnitsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ThawUnit(ThawUnitRequest) returns (Unit) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  rpc Verify(VerifyRequest) returns (VerifyResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc CreateExport(CreateExportRequest) returns (Export) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  rpc GetExport(GetExportRequest) returns (Export) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListHolds(ListHoldsRequest) returns (ListHoldsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc PlaceHold(PlaceHoldRequest) returns (Hold) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  rpc ReleaseHold(ReleaseHoldRequest) returns (Hold) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  rpc RequestErasure(RequestErasureRequest) returns (Erasure) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  rpc GetErasure(GetErasureRequest) returns (Erasure) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListDestructions(ListDestructionsRequest) returns (ListDestructionsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ApproveDestruction(ApproveDestructionRequest) returns (Destruction) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+message Unit {
+  string table = 1;
+  string unit_key = 2;
+  google.protobuf.Timestamp range_from = 3;
+  google.protobuf.Timestamp range_to = 4;
+  string list_value = 5;
+  // ACTIVE | BLOCKED | SEALED | EXPORTING | EXPORTED | VERIFIED | COLD_PENDING_DROP | COLD | THAWED | DESTROYED
+  string state = 6;
+  int64 rows = 7;
+  string blocked_reason = 8;
+  google.protobuf.Timestamp sealed_at = 9;
+  google.protobuf.Timestamp cold_at = 10;
+  google.protobuf.Timestamp thawed_until = 11;
+}
+
+message ListUnitsRequest {
+  string table = 1;
+  int32 page_size = 2;
+  string cursor = 3;
+}
+message ListUnitsResponse {
+  repeated Unit units = 1;
+  string next_cursor = 2;
+}
+
+message ThawUnitRequest {
+  string table = 1;
+  string unit_key = 2;
+  int32 days = 3;
+  string idempotency_key = 4;
+}
+
+message VerifyRequest {
+  string table = 1;
+}
+message VerifyResponse {
+  bool ok = 1;
+  int32 units_checked = 2;
+  repeated string mismatched_units = 3;
+}
+
+message CreateExportRequest {
+  string table = 1;
+  google.protobuf.Timestamp from = 2;
+  google.protobuf.Timestamp to = 3;
+  // structured filter, JSON object (equality, range, in); the caller's data scope always applies
+  string filter_json = 4;
+  // parquet | csv
+  string format = 5;
+  string idempotency_key = 6;
+}
+message GetExportRequest {
+  string job_id = 1;
+}
+message Export {
+  string job_id = 1;
+  // PENDING | RUNNING | DONE | FAILED
+  string state = 2;
+  // presigned, valid at most 300 s; empty until DONE
+  string result_url = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message Hold {
+  string hold_id = 1;
+  // JSON object: tables, units or subjects covered
+  string scope_json = 2;
+  string reason = 3;
+  string placed_by = 4;
+  google.protobuf.Timestamp placed_at = 5;
+  google.protobuf.Timestamp released_at = 6;
+}
+message ListHoldsRequest {
+  bool include_released = 1;
+}
+message ListHoldsResponse {
+  repeated Hold holds = 1;
+}
+message PlaceHoldRequest {
+  string scope_json = 1;
+  string reason = 2;
+  string idempotency_key = 3;
+}
+message ReleaseHoldRequest {
+  string hold_id = 1;
+  string idempotency_key = 2;
+}
+
+message Erasure {
+  string request_id = 1;
+  string subject = 2;
+  string subject_id = 3;
+  google.protobuf.Timestamp received_at = 4;
+  google.protobuf.Timestamp applied_at = 5;
+  // receipt: [{table, action, rows, basis}] as JSON
+  string result_json = 6;
+}
+message RequestErasureRequest {
+  string request_id = 1;
+  string subject = 2;
+  string subject_id = 3;
+  string idempotency_key = 4;
+}
+message GetErasureRequest {
+  string request_id = 1;
+}
+
+message Destruction {
+  string destruction_id = 1;
+  string table = 2;
+  string unit_key = 3;
+  int64 rows = 4;
+  string unit_digest_hex = 5;
+  string basis = 6;
+  // PROPOSED | APPROVED | DONE
+  string state = 7;
+}
+message ListDestructionsRequest {
+  string state = 1;
+}
+message ListDestructionsResponse {
+  repeated Destruction destructions = 1;
+}
+message ApproveDestructionRequest {
+  string destruction_id = 1;
+  string idempotency_key = 2;
+}

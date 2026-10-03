@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/data-lifecycle-config.schema.json",
+  "title": "Value of DATA_LIFECYCLE",
+  "description": "The lifecycle engine's mode, adapters and deployment overrides (be-protocol P16.9). Given as a JSON object or a YAML mapping. A component-level value replaces the shared value as a whole. An adapter the runtime does not have fails the start; an override may only lengthen retention.min.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "mode": { "enum": ["on", "dry-run", "off"], "default": "on" },
+    "cold_store": { "enum": ["none", "s3-parquet", "iceberg"], "default": "none" },
+    "cold_query": { "enum": ["none", "scan", "trino"], "default": "none" },
+    "publisher": { "enum": ["none", "watermark", "debezium"], "default": "none" },
+    "pii": { "enum": ["plain", "crypto-shred"], "default": "plain" },
+    "tables": {
+      "description": "Per-table overrides, keyed by table name.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/tableOverride" }
+    },
+    "tenants": {
+      "description": "Reserved for a pooled multi-tenant deployment: per-tenant table overrides.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "tables": { "type": "object", "additionalProperties": { "$ref": "#/$defs/tableOverride" } } }
+      }
+    }
+  },
+  "$defs": {
+    "tableOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retention": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "min": { "$ref": "lifecycle.schema.json#/$defs/afterAnchorOrForever" } }
+        },
+        "tiers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hot": { "$ref": "lifecycle.schema.json#/$defs/durationOrNone" },
+            "seal": { "$ref": "lifecycle.schema.json#/$defs/sealSpec" },
+            "cold": { "$ref": "lifecycle.schema.json#/$defs/afterAnchorOrNever" }
+          }
+        }
+      }
+    }
+  }
+}

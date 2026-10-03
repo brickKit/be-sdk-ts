@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/vectors/case-file.schema.json",
+  "title": "be-protocol vector file",
+  "description": "One topic of one area: a list of cases, each with an input and exactly one of expected / expected_error. See vectors/README.md.",
+  "type": "object",
+  "required": ["area", "topic", "protocol", "generated_by", "cases"],
+  "properties": {
+    "area": { "enum": ["money", "idempotency", "envelope", "calendar", "numbering", "errors", "config", "redaction", "authz", "lifecycle", "search"] },
+    "topic": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "protocol": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "generated_by": { "type": "string" },
+    "note": { "type": "string" },
+    "notes": { "type": "object" },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "op", "input"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+(\\.[a-z0-9_]+)+\\.[a-z0-9][a-z0-9-]*$" },
+          "description": { "type": "string" },
+          "op": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "refs": { "type": "array", "items": { "type": "string" } },
+          "input": {},
+          "expected": {},
+          "expected_error": {
+            "type": "object",
+            "required": ["reason"],
+            "properties": { "reason": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" } }
+          }
+        },
+        "oneOf": [
+          { "required": ["expected"], "not": { "required": ["expected_error"] } },
+          { "required": ["expected_error"], "not": { "required": ["expected"] } }
+        ]
+      }
+    }
+  }
+}

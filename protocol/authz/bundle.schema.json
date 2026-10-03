@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/contract-infra-authz/schemas/bundle.schema.json",
+  "title": "authz bundle v2",
+  "description": "Served at GET {AUTHZ_URL}/authz/v2/bundle (and GetBundle). Everything a component needs to decide locally. Additive only within authz/2: consumers ignore unknown members and unknown capability names. Meaning of each member: EVALUATION.md.",
+  "type": "object",
+  "required": ["contract", "revision", "capabilities", "roles", "grants", "stale_since", "catalog_digest"],
+  "properties": {
+    "contract": {
+      "description": "authz/2.<minor>. A consumer refuses a bundle without this member or with another major, logs at ERROR and keeps serving 503 AUTHZ_NOT_READY until a valid bundle arrives.",
+      "type": "string",
+      "pattern": "^authz/2\\.(0|[1-9][0-9]*)$"
+    },
+    "revision": { "$ref": "#/$defs/revision" },
+    "member": {
+      "description": "Informative: which member produced the bundle. Never used in a decision.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "capabilities": { "$ref": "#/$defs/capabilities" },
+    "roles": {
+      "description": "Role code to the permission keys it grants (page, action and field keys alike).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/key" },
+        "uniqueItems": true
+      }
+    },
+    "grants": {
+      "description": "Role code to its data-scope assignment and validity window. A role absent here has no levels, no values and no window.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/grant" }
+    },
+    "profiles": {
+      "description": "Ceiling profile code to the profile. Referenced by a token's ceil[] claim. Capability delegation.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/profile" }
+    },
+    "delegations": {
+      "description": "Active on_behalf delegations, and act_as delegations a member chooses to list. Capability delegation.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/delegation" }
+    },
+    "stale_since": {
+      "description": "sub to a unix second: a token for that sub issued before stale_since - 5 is stale (401 TOKEN_STALE). Bounded list; entries older than the longest access-token lifetime may be dropped.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/unix" }
+    },
+    "revoked_grants": {
+      "description": "Delegation grant id (the dg claim) to the unix second it was revoked. A token whose dg is listed is stale.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/unix" }
+    },
+    "catalog_digest": {
+      "description": "Digest of the catalogue the member holds (GetCatalog): sha256 over the RFC 8785 canonical JSON of the catalog object.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "revision": {
+      "description": "Monotonic int64 as a decimal string, the consistency token of the member.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,18})$"
+    },
+    "unix": { "type": "integer", "minimum": 0 },
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)+$"
+    },
+    "level": { "type": "string", "enum": ["own", "dept", "subtree", "all"] },
+    "capabilities": {
+      "type": "object",
+      "required": ["core"],
+      "properties": {
+        "core": { "const": true },
+        "admin_write": { "type": "boolean" },
+        "sharing": { "type": "boolean" },
+        "relation_sync": { "type": "boolean" },
+        "check": { "type": "boolean" },
+        "graph": { "type": "boolean" },
+        "list_objects": {
+          "description": "Present when ListObjects answers; absent or false otherwise.",
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "required": ["max_results"],
+              "properties": { "max_results": { "type": "integer", "minimum": 1 } }
+            }
+          ]
+        },
+        "delegation": { "type": "boolean" },
+        "agents": { "type": "boolean", "description": "Reserved (A4); false in every 2.0 member." },
+        "impersonation": { "type": "boolean" },
+        "access_review": { "type": "boolean" },
+        "explain_paths": { "type": "boolean" },
+        "conditions": { "type": "boolean", "description": "Reserved; never affects visibility." }
+      },
+      "additionalProperties": true
+    },
+    "grant": {
+      "type": "object",
+      "properties": {
+        "levels": {
+          "description": "Permission key to its level for this role.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/level" }
+        },
+        "default_level": {
+          "description": "Level for keys of this role without an entry in levels. Absent: own.",
+          "$ref": "#/$defs/level"
+        },
+        "values": {
+          "description": "Dimension to the values this role holds for every key it grants. org values are department subtrees (paths); * means all and is only ever granted explicitly.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          }
+        },
+        "from_ts": { "description": "Inclusive start, unix seconds. Absent: always started.", "$ref": "#/$defs/unix" },
+        "until": { "description": "Exclusive end, unix seconds. At or after it the role contributes nothing. Absent: no end.", "$ref": "#/$defs/unix" }
+      },
+      "additionalProperties": true
+    },
+    "profile": {
+      "type": "object",
+      "required": ["keys", "max_level", "relations"],
+      "properties": {
+        "keys": { "type": "array", "items": { "$ref": "#/$defs/key" }, "uniqueItems": true },
+        "fields": {
+          "description": "Field keys the profile lets through (field keys may also be listed in keys).",
+          "type": "array", "items": { "$ref": "#/$defs/key" }, "uniqueItems": true
+        },
+        "max_level": { "$ref": "#/$defs/level" },
+        "relations": {
+          "description": "Relations a share or relation tuple may count through under this ceiling.",
+          "type": "array", "items": { "type": "string" }, "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "delegation": {
+      "type": "object",
+      "required": ["id", "mode", "from", "to", "keys"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "mode": { "type": "string", "enum": ["on_behalf", "act_as"] },
+        "from": { "description": "The delegator's sub.", "type": "string", "minLength": 1 },
+        "to": { "description": "The delegate's sub (on_behalf) or the acting party's sub (act_as).", "type": "string", "minLength": 1 },
+        "keys": { "type": "array", "items": { "$ref": "#/$defs/key" }, "uniqueItems": true },
+        "profiles": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "from_ts": { "$ref": "#/$defs/unix" },
+        "until": { "$ref": "#/$defs/unix" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,46 +1,67 @@
 {
   "name": "@brickkit/be-sdk-ts",
-  "version": "0.5.0",
-  "description": "be-sdk-ts：TypeScript 横切基础库（总纲 §4 SOP-L，只有一半能力）。非 brickKit 组件，非公共 model 包",
+  "version": "0.6.0-rc.0",
+  "description": "be-sdk-ts: the official TypeScript runtime of the BrickEnterprise component protocol (be-protocol 1.0)",
   "license": "Apache-2.0",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "protocol/schemas",
+    "protocol/ddl",
+    "platform-migrations"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@escape.tech/graphql-armor": "3.2.0",
+    "@graphql-yoga/plugin-persisted-operations": "3.22.0",
+    "@grpc/grpc-js": "1.14.5",
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/transport-node": "3.4.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/context-async-hooks": "2.11.0",
+    "@opentelemetry/core": "2.11.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/resources": "2.11.0",
+    "@opentelemetry/sdk-metrics": "2.11.0",
+    "@opentelemetry/sdk-trace-base": "2.11.0",
+    "@prometheus-io/client": "0.16.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "dataloader": "2.2.3",
+    "fastify": "5.12.5",
     "graphql": "17.0.2",
     "graphql-yoga": "5.22.0",
-    "@graphql-tools/schema": "10.1.1",
-    "@graphql-yoga/plugin-persisted-operations": "3.22.0",
-    "@escape.tech/graphql-armor": "3.2.0",
-    "dataloader": "2.2.3",
-    "@grpc/grpc-js": "1.14.4",
-    "@opentelemetry/api": "1.9.1",
-    "@opentelemetry/sdk-node": "0.222.0",
-    "@opentelemetry/sdk-trace": "2.11.0",
-    "@opentelemetry/context-async-hooks": "2.11.0",
-    "@opentelemetry/resources": "2.11.0",
-    "@opentelemetry/semantic-conventions": "1.43.0",
-    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
-    "@prometheus-io/client": "0.16.1",
+    "jose": "6.2.12",
+    "node-pg-migrate": "9.0.0",
+    "pg": "8.23.1",
     "pino": "10.3.1",
-    "jose": "6.2.12"
+    "undici": "8.11.2",
+    "uuid": "11.1.1",
+    "yaml": "2.9.1",
+    "zod": "4.6.5"
   },
   "devDependencies": {
+    "@bufbuild/protobuf": "2.16.0",
+    "@types/node": "24.19.1",
+    "@types/pg": "8.23.1",
+    "fast-check": "4.10.2",
+    "grpc-tools": "1.13.1",
+    "ts-proto": "2.12.4",
     "typescript": "5.9.3",
-    "vitest": "3.2.7",
-    "tsx": "4.23.13",
-    "@types/node": "22.19.0"
+    "vitest": "3.2.7"
   }
 }

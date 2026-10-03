@@ -1,0 +1,632 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/fixtures.schema.json",
+  "title": "Conformance fixtures (conformance/fixtures.yaml)",
+  "description": "Tells the suite how to make a component do things and how to observe the result. Data, not code: a component in any language writes the same file. Paths of *_file values are relative to the fixtures file. observe.sql reads only the component's own schema, which the suite owns during a run.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "users": {
+      "description": "Personas the fake identity provider signs tokens for, keyed by persona name.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "roles"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sub": {
+            "description": "Platform sub; generated (UUIDv7) when absent.",
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dept_path": {
+            "description": "Empty string = no department (P6.4).",
+            "type": "string"
+          },
+          "legal_entity": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "act": {
+            "$ref": "access-token.schema.json#/$defs/actor"
+          }
+        }
+      }
+    },
+    "grants": {
+      "description": "Role grants put into the fake authorization provider's bundle, keyed by role code. The scope profile combines them at random on top.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "assembly-protocol.schema.json#/$defs/permKey"
+            }
+          },
+          "levels": {
+            "type": "object",
+            "additionalProperties": {
+              "enum": [
+                "own",
+                "dept",
+                "subtree",
+                "all"
+              ]
+            }
+          },
+          "default_level": {
+            "enum": [
+              "own",
+              "dept",
+              "subtree",
+              "all"
+            ]
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "until": {
+            "description": "Seconds since the epoch, or an offset such as +60s relative to the run.",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        }
+      }
+    },
+    "resources": {
+      "description": "Per resource type (or per REST resource without a declared type), named operations. get, list and create have fixed meanings; every other name is a command.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/$defs/operation"
+        }
+      }
+    },
+    "dependencies": {
+      "description": "Canned answers of the fake peer, per dependency component ID, per full rpc name (pkg.Service/Method).",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": {
+          "description": "A full rpc name (pkg.Service/Method), or a user-plane HTTP operation as '<METHOD> <path>' with {param} placeholders.",
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.]+/[A-Za-z0-9_]+$"
+            },
+            {
+              "pattern": "^(GET|POST|PUT|PATCH|DELETE) /[^ ]*$"
+            }
+          ]
+        },
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "response_file": {
+              "type": "string"
+            },
+            "response": {
+              "type": "object"
+            },
+            "code": {
+              "$ref": "errors-yaml.schema.json#/$defs/grpcCode"
+            },
+            "http": {
+              "description": "Deprecated spelling: key the entry by '<METHOD> <path>' instead.",
+              "type": "string"
+            },
+            "hang": {
+              "description": "The fake never answers this call until the suite releases it (deadline and reconciler cases).",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "events": {
+      "description": "produces: how to make the component publish each subject of its event contract (component.yaml events.publishes); consumes: every subject it subscribes to, the same set as component.yaml events.subscribes (P12.16, CP-EVS-09).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "produces": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/produce"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/produce"
+              }
+            }
+          ]
+        },
+        "consumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "subject",
+              "sample_file",
+              "observe"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "subject": {
+                "$ref": "envelope.schema.json#/$defs/subject"
+              },
+              "consumer": {
+                "description": "Cursor consumer (projection) name; default ''.",
+                "type": "string"
+              },
+              "sample_file": {
+                "description": "A payload sample; the suite varies ce-aggregateversion to create reordering and duplicates.",
+                "type": "string"
+              },
+              "aggregate_id": {
+                "description": "JSONPath into the sample for the aggregate ID.",
+                "type": "string"
+              },
+              "observe": {
+                "$ref": "#/$defs/observe"
+              },
+              "setup": {
+                "description": "An operation to run before the sample is delivered (e.g. approve a widget so the handler finds it).",
+                "$ref": "#/$defs/via"
+              },
+              "produces": {
+                "description": "A subject the handler publishes in the same transaction (causation = the handled ce-id, hop + 1; CP-EVS-06).",
+                "$ref": "envelope.schema.json#/$defs/subject"
+              }
+            }
+          }
+        }
+      }
+    },
+    "jobs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enqueues": {
+          "description": "Operations that enqueue a queued job, for CP-JOBS-03 and CP-JOBS-04.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "via",
+              "kind"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "via": {
+                "$ref": "#/$defs/via"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "observe": {
+                "$ref": "#/$defs/observe"
+              }
+            }
+          }
+        },
+        "cron": {
+          "description": "Cron jobs the suite runs on two replicas (CP-JOBS-01): the override it sets through JOBS_OVERRIDES and how to count runs. When /_be/info lists job_run, the first one is also run through job run <name> (CP-JOBS-06).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "override",
+              "observe"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "override": {
+                "description": "The JOBS_OVERRIDES entry for this job, e.g. {cron: '@every 2s'}.",
+                "type": "object"
+              },
+              "observe": {
+                "$ref": "#/$defs/observe"
+              }
+            }
+          }
+        },
+        "reconcilers": {
+          "description": "Reconcilers the suite drives (CP-IDEM-05): an operation whose downstream call hangs past the route deadline, then the answer that lets the reconciler finish.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "via",
+              "stall",
+              "resolve"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "via": {
+                "$ref": "#/$defs/via"
+              },
+              "stall": {
+                "description": "Dependency call to hang: <dependency component ID> <full rpc name>.",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*/[a-z][a-z0-9-]* [A-Za-z0-9_.]+/[A-Za-z0-9_]+$"
+              },
+              "expect_while_stalled": {
+                "$ref": "#/$defs/expect"
+              },
+              "resolve": {
+                "description": "Dependency call and canned answer the reconciler then receives.",
+                "type": "object",
+                "required": [
+                  "call",
+                  "response_file"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "call": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*/[a-z][a-z0-9-]* [A-Za-z0-9_.]+/[A-Za-z0-9_]+$"
+                  },
+                  "response_file": {
+                    "type": "string"
+                  }
+                }
+              },
+              "observe": {
+                "$ref": "#/$defs/observe"
+              }
+            }
+          }
+        }
+      }
+    },
+    "slow": {
+      "description": "An operation the suite can make arbitrarily slow (deadline and bulkhead cases); {ms} in its path or query is replaced.",
+      "$ref": "#/$defs/operation"
+    },
+    "lock": {
+      "description": "How the suite holds a row lock that a command then waits on (CP-DB-02): a SELECT … FOR UPDATE on the component's own table, $1 = the record ID, held while the operation runs.",
+      "type": "object",
+      "required": [
+        "sql",
+        "while"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sql": {
+          "type": "string",
+          "pattern": "(?i)^\\s*SELECT\\b.*\\bFOR UPDATE\\b"
+        },
+        "while": {
+          "$ref": "#/$defs/via"
+        }
+      }
+    },
+    "pii_log": {
+      "description": "An operation that logs personal data, and the fields that must come out [REDACTED] (CP-OBS-04).",
+      "type": "object",
+      "required": [
+        "via",
+        "msg",
+        "fields"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "via": {
+          "$ref": "#/$defs/via"
+        },
+        "msg": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "blob": {
+      "description": "Upload and download of object storage through presigned URLs (blob profile).",
+      "type": "object",
+      "required": [
+        "upload"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "upload": {
+          "type": "object",
+          "required": [
+            "via",
+            "url"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "via": {
+              "$ref": "#/$defs/via"
+            },
+            "url": {
+              "description": "JSONPath to the presigned URL.",
+              "type": "string"
+            },
+            "max_bytes": {
+              "description": "JSONPath to the size limit the URL enforces.",
+              "type": "string"
+            }
+          }
+        },
+        "download": {
+          "type": "object",
+          "required": [
+            "via",
+            "url"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "via": {
+              "$ref": "#/$defs/via"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "via": {
+      "description": "resources.<resource>.<operation>",
+      "type": "string",
+      "pattern": "^resources\\.[A-Za-z0-9_.-]+\\.[a-z][a-z0-9_]*$"
+    },
+    "produce": {
+      "type": "object",
+      "required": [
+        "via",
+        "subject"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "via": {
+          "$ref": "#/$defs/via"
+        },
+        "subject": {
+          "$ref": "envelope.schema.json#/$defs/subject"
+        }
+      }
+    },
+    "observe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sql": {
+          "description": "A SELECT on the component's own tables; $1 is the aggregate ID.",
+          "type": "string",
+          "pattern": "^\\s*(SELECT|select|WITH|with)\\b"
+        },
+        "request": {
+          "$ref": "#/$defs/operation"
+        }
+      },
+      "minProperties": 1
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "description": "Path on the main port; {id} is replaced by the created record's ID.",
+          "type": "string",
+          "pattern": "^/"
+        },
+        "grpc": {
+          "description": "A system-plane call instead of REST: pkg.Service/Method.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.]+/[A-Za-z0-9_]+$"
+        },
+        "as": {
+          "description": "Persona name from users; absent = the suite picks one with the needed key.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The permission key the route requires.",
+          "$ref": "assembly-protocol.schema.json#/$defs/permKey"
+        },
+        "body_file": {
+          "type": "string"
+        },
+        "body": {
+          "type": "object"
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "id": {
+          "description": "JSONPath into the response for the created record's ID (create).",
+          "type": "string"
+        },
+        "idempotent": {
+          "description": "Accepts an idempotency key.",
+          "type": "boolean"
+        },
+        "two_phase": {
+          "description": "Claim, a network call, then complete (CP-IDEM-05).",
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "description": "Body fields that take part in the request fingerprint.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "triggers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "grpc": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.]+/[A-Za-z0-9_]+$"
+            },
+            "http": {
+              "type": "string"
+            },
+            "event": {
+              "$ref": "envelope.schema.json#/$defs/subject"
+            },
+            "job": {
+              "type": "string"
+            }
+          }
+        },
+        "expect": {
+          "$ref": "#/$defs/expect"
+        },
+        "user_facing": {
+          "description": "A user-facing rpc kept in a contract: the runtime answers UNAUTHENTICATED over gRPC before any component code runs (CP-RPC-03).",
+          "type": "boolean"
+        },
+        "filters": {
+          "description": "Query parameters whose values are data-scope dimension values, parameter -> dimension (CP-SCOPE-03, CP-SCOPE-09).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "dimension"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "dimension": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            }
+          }
+        },
+        "sort": {
+          "description": "The sort parameter and the values that sort by a field masked for a caller without its read key (CP-SCOPE-11).",
+          "type": "object",
+          "required": [
+            "param"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "param": {
+              "type": "string"
+            },
+            "masked": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "range": {
+          "description": "Time-range query parameters of a list (CP-LIFE-02).",
+          "type": "object",
+          "required": [
+            "after",
+            "before"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "after": {
+              "type": "string"
+            },
+            "before": {
+              "type": "string"
+            },
+            "include_cold": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "method",
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "grpc"
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "field": {
+          "description": "JSONPath into the response and the value expected there.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

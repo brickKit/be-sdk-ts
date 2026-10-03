@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/compconf-report.schema.json",
+  "title": "Component conformance report (compconf-report.json)",
+  "description": "The machine-readable report of one run of conformance/component/ against one image. The gate compconf-record-scan requires a report for the exact version and image digest of every component and shell in the project, with every required profile passing.",
+  "type": "object",
+  "required": ["suite", "protocol", "component", "version", "image", "profiles", "skipped", "started_at", "result"],
+  "additionalProperties": false,
+  "properties": {
+    "suite": { "description": "be-acceptance@<version>", "type": "string", "pattern": "^be-acceptance@[0-9]+\\.[0-9]+\\.[0-9]+.*$" },
+    "protocol": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "component": { "type": "string", "pattern": "^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$" },
+    "version": { "type": "string" },
+    "shell": { "description": "Set when the component was run as a member of this shell.", "type": "string" },
+    "image": {
+      "type": "object", "required": ["ref", "digest"], "additionalProperties": false,
+      "properties": { "ref": { "type": "string" }, "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+    },
+    "sdk": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "object", "required": ["name", "version"], "properties": { "name": { "type": "string" }, "version": { "type": "string" } }, "additionalProperties": false }
+      ]
+    },
+    "env": {
+      "description": "Versions of the real infrastructure used, e.g. {postgres: 16.4, nats: 2.10.x}.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "result": { "enum": ["pass", "fail"] },
+    "profiles": {
+      "type": "object",
+      "propertyNames": { "$ref": "conformance-cases.schema.json#/$defs/profile" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status", "cases"],
+        "additionalProperties": false,
+        "properties": {
+          "status": { "enum": ["pass", "fail", "warn", "skipped"] },
+          "cases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "status"],
+              "additionalProperties": false,
+              "properties": {
+                "id": { "type": "string", "pattern": "^CP-[A-Z]+-[0-9]{2}$" },
+                "status": { "enum": ["pass", "fail", "warn", "skipped"] },
+                "ms": { "type": "integer", "minimum": 0 },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["case", "reason"], "additionalProperties": false,
+        "properties": { "case": { "type": "string", "pattern": "^CP-[A-Z]+-[0-9]{2}$" }, "reason": { "type": "string" } }
+      }
+    }
+  }
+}

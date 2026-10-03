@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/lifecycle.schema.json",
+  "title": "Lifecycle declaration (migrations/lifecycle.yaml) v1",
+  "description": "Declares the lifecycle of every table a component's migrations create (be-protocol P16.1). Invariants that need the migrations themselves (every table declared, NUMERIC precision on cold tables) are checked by the gate lifecycle-scan and when the engine loads the declaration.",
+  "type": "object",
+  "required": ["lifecycle", "tables"],
+  "additionalProperties": false,
+  "properties": {
+    "lifecycle": { "const": "v1" },
+    "tenant_key": {
+      "description": "Reserved: the tenant column for a pooled multi-tenant deployment; `none` today.",
+      "type": "string",
+      "default": "none"
+    },
+    "requires": {
+      "description": "Adapter capabilities the component requires, e.g. cold_query.list; the deployment's adapters must provide them.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z_]+\\.[a-z_]+$" },
+      "uniqueItems": true
+    },
+    "tables": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+      "additionalProperties": { "$ref": "#/$defs/table" }
+    }
+  },
+  "$defs": {
+    "duration": { "type": "string", "pattern": "^[1-9][0-9]*(d|w|mo|y)$" },
+    "anchor": { "enum": ["created", "closed", "sealed", "fiscal_year_end"] },
+    "afterAnchor": { "type": "string", "pattern": "^[1-9][0-9]*(d|w|mo|y) after (created|closed|sealed|fiscal_year_end)$" },
+    "durationOrNone": { "anyOf": [ { "$ref": "#/$defs/duration" }, { "const": "none" } ] },
+    "afterAnchorOrNever": { "anyOf": [ { "$ref": "#/$defs/afterAnchor" }, { "const": "never" } ] },
+    "afterAnchorOrForever": { "anyOf": [ { "$ref": "#/$defs/afterAnchor" }, { "const": "forever" } ] },
+    "sealSpec": { "anyOf": [ { "$ref": "#/$defs/afterAnchor" }, { "enum": ["immediate", "on_signal", "never"] } ] },
+    "column": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "class": { "enum": ["master", "reference", "document", "ledger", "audit", "queue", "snapshot", "platform"] },
+        "follows": { "description": "Follow this parent table: same partition bounds, sealed, frozen and destroyed with it.", "$ref": "#/$defs/column" },
+        "partition": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["by", "grain"],
+              "additionalProperties": false,
+              "properties": {
+                "by": { "$ref": "#/$defs/column" },
+                "grain": { "enum": ["week", "month", "year"] },
+                "ahead": { "description": "Partitions kept ready ahead of now.", "type": "integer", "minimum": 1, "default": 2 }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["by", "kind", "opened_by"],
+              "additionalProperties": false,
+              "properties": {
+                "by": { "$ref": "#/$defs/column" },
+                "kind": { "const": "list" },
+                "opened_by": { "const": "command" }
+              }
+            }
+          ]
+        },
+        "closed": {
+          "description": "When a row counts as closed, as structured data (no SQL).",
+          "type": "object",
+          "required": ["column", "in", "at"],
+          "additionalProperties": false,
+          "properties": {
+            "column": { "$ref": "#/$defs/column" },
+            "in": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+            "at": { "description": "The column holding the instant the row closed.", "$ref": "#/$defs/column" }
+          }
+        },
+        "tiers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hot": { "description": "Default read window of a list without a range.", "$ref": "#/$defs/durationOrNone" },
+            "seal": { "$ref": "#/$defs/sealSpec" },
+            "cold": { "$ref": "#/$defs/afterAnchorOrNever" }
+          }
+        },
+        "retention": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min": { "description": "Destruction floor; a deployment can only lengthen it.", "$ref": "#/$defs/afterAnchorOrForever" },
+            "basis": { "description": "The legal or business basis, written into destruction lists and erasure receipts.", "type": "string" },
+            "end": { "enum": ["keep", "destroy", "review"] }
+          }
+        },
+        "erasure": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["subject", "key", "columns"],
+              "additionalProperties": false,
+              "properties": {
+                "subject": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+                "key": { "$ref": "#/$defs/column" },
+                "columns": {
+                  "type": "object",
+                  "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+                  "additionalProperties": { "enum": ["delete", "anonymize", "restrict"] },
+                  "minProperties": 1
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["subject", "key", "action"],
+              "additionalProperties": false,
+              "properties": {
+                "subject": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+                "key": { "$ref": "#/$defs/column" },
+                "action": { "const": "delete" }
+              }
+            }
+          ]
+        },
+        "pii": {
+          "description": "Columns holding personal data that no erasure rule covers (for example a free-text note). A ledger table may declare none.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/column" },
+          "uniqueItems": true
+        },
+        "checkpoint": { "description": "A carry-forward table that must exist for a unit before it is frozen.", "$ref": "#/$defs/column" },
+        "guard": {
+          "type": "object",
+          "required": ["blocked_by"],
+          "additionalProperties": false,
+          "properties": { "blocked_by": { "description": "A named guard the component implements.", "type": "string", "pattern": "^[a-z][a-z0-9_]*$" } }
+        },
+        "dataset": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publish": { "type": "boolean" },
+            "exclude": { "type": "array", "items": { "$ref": "#/$defs/column" } },
+            "pseudonymize": { "type": "array", "items": { "$ref": "#/$defs/column" } }
+          }
+        }
+      },
+      "anyOf": [ { "required": ["class"] }, { "required": ["follows"] } ],
+      "allOf": [
+        {
+          "if": { "properties": { "class": { "const": "ledger" } }, "required": ["class"] },
+          "then": {
+            "not": { "anyOf": [
+              { "required": ["pii"], "properties": { "pii": { "minItems": 1 } } },
+              { "required": ["erasure"], "properties": { "erasure": { "required": ["columns"] } } }
+            ] }
+          }
+        },
+        {
+          "if": { "properties": { "class": { "const": "queue" } }, "required": ["class"] },
+          "then": { "properties": { "tiers": { "properties": { "cold": { "const": "never" } } } } }
+        },
+        {
+          "if": { "properties": { "class": { "const": "snapshot" } }, "required": ["class"] },
+          "then": { "properties": { "retention": { "not": { "required": ["min"] } } } }
+        }
+      ]
+    }
+  }
+}

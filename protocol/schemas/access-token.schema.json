@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/access-token.schema.json",
+  "title": "Access-token claims a component requires and reads",
+  "description": "The JWT payload of the platform access token as a component verifies it (be-protocol P5.3, P5.5). Issuing tokens is the identity family contract's (iam/1); this schema states only what a conforming component requires. iss and aud equality with IAM_ISSUER and TENANT_ID, the signature, and time checks are not expressible here and are stated in P5. Unknown claims are allowed and ignored.",
+  "type": "object",
+  "required": ["iss", "aud", "sub", "typ", "iat", "exp", "jti"],
+  "properties": {
+    "iss": { "type": "string", "minLength": 1 },
+    "aud": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      ]
+    },
+    "sub": { "type": "string", "minLength": 1 },
+    "typ": { "const": "access" },
+    "iat": { "type": "integer" },
+    "exp": { "type": "integer" },
+    "nbf": { "type": "integer" },
+    "jti": { "type": "string", "minLength": 1 },
+    "tenant_id": { "type": "string" },
+    "roles": { "type": "array", "items": { "type": "string" } },
+    "dept_path": { "type": "string" },
+    "act": { "$ref": "#/$defs/actor" },
+    "ceil": { "type": "array", "items": { "type": "string" } },
+    "dg": { "type": "string" },
+    "azp": { "type": "string" },
+    "locale": { "type": "string" },
+    "org_id": { "description": "Deprecated: read, never used for a decision.", "type": "string" }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "required": ["sub", "kind"],
+      "properties": {
+        "sub": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["user", "agent", "svc"] },
+        "act": { "$ref": "#/$defs/actor" }
+      }
+    }
+  }
+}

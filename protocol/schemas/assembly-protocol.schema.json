@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/brickKit/be-protocol/schemas/assembly-protocol.schema.json",
+  "title": "assembly.yaml: the keys the component protocol reads",
+  "description": "Only protocol, language, conformance, resources and requires_capabilities are defined here (be-protocol P20.2, P6.10). assembly.yaml carries other project keys (permissions, data_scopes, menus, edge_routes, domain, tier, …) owned by the project's tooling; they are allowed and not checked by this schema.",
+  "type": "object",
+  "required": [
+    "protocol"
+  ],
+  "properties": {
+    "protocol": {
+      "description": "The protocol version the component implements and is tested against.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "language": {
+      "description": "Required when the component is not built on an official SDK: the language's name.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9+#-]*$"
+    },
+    "conformance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fixtures": {
+          "description": "Path of the fixtures file, relative to the component root.",
+          "type": "string",
+          "default": "conformance/fixtures.yaml"
+        },
+        "skip": {
+          "description": "Only cases marked skippable in schemas/conformance-cases.yaml, each with a reason.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "case",
+              "reason"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "case": {
+                "type": "string",
+                "pattern": "^CP-[A-Z]+-[0-9]{2}$"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    "resources": {
+      "description": "Resource types this component owns; declaring one mounts the resource contract (P6.10) and the ACL projection (P6.12).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    },
+    "requires_capabilities": {
+      "description": "Authorization-provider capabilities the component needs; must be a subset of the installed member's provides_capabilities.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/capability"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "permKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)+$"
+    },
+    "capability": {
+      "enum": [
+        "core",
+        "admin_write",
+        "sharing",
+        "relation_sync",
+        "check",
+        "graph",
+        "list_objects",
+        "delegation",
+        "agents",
+        "impersonation",
+        "access_review",
+        "explain_paths",
+        "conditions"
+      ]
+    },
+    "resource": {
+      "type": "object",
+      "required": [
+        "type",
+        "table",
+        "view_key",
+        "keys"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "<domain>.<name>.<aggregate>; one owner, recorded in the append-only resource-type registry.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_]*$"
+        },
+        "table": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "view_key": {
+          "description": "The key that decides whether a record of this type is visible at all, for lists and single reads (contract-infra-authz EVALUATION.md E10).",
+          "$ref": "#/$defs/permKey"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/permKey"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "dimensions": {
+          "description": "The data-scope dimensions this type is filtered by: identity dimensions owner and org, resource dimensions such as warehouse or legal_entity.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "relations": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "grants": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/permKey"
+                }
+              },
+              "includes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "owned_by": {
+                "description": "authz (shares; the default) or component (written by the owning component through relation sync, P6.13; administrators cannot edit it).",
+                "enum": [
+                  "authz",
+                  "component"
+                ]
+              }
+            }
+          }
+        },
+        "share": {
+          "type": "object",
+          "required": [
+            "key",
+            "relations",
+            "subjects"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/permKey"
+            },
+            "relations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "subjects": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "user",
+                  "role",
+                  "dept",
+                  "dept_tree"
+                ]
+              },
+              "minItems": 1
+            }
+          }
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "set",
+              "columns",
+              "read"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "set": {
+                "$ref": "#/$defs/permKey"
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "read": {
+                "$ref": "#/$defs/permKey"
+              },
+              "edit": {
+                "$ref": "#/$defs/permKey"
+              }
+            }
+          }
+        },
+        "inherits": {
+          "description": "One-hop derivation from a parent type, e.g. {from: prj.project.project, via: project_id, relation: member, as: viewer}.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "from",
+              "via",
+              "relation",
+              "as"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "via": {
+                "type": "string"
+              },
+              "relation": {
+                "type": "string"
+              },
+              "as": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "derivation": {
+          "enum": [
+            "direct",
+            "graph"
+          ],
+          "default": "direct"
+        }
+      }
+    }
+  }
+}
