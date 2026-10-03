@@ -32,7 +32,7 @@ export async function writeOutbox(w: OutboxWriter, tx: Tx, ev: EventInput): Prom
   const le = legalEntityOf(payloadJson);
   if (contract.transactionDocument && le === undefined) throw platformError("INTERNAL", undefined, `LEGAL_ENTITY_MISSING: ${ev.subject} is a transaction-document event and needs legal_entity_id`);
   const u = currentUnit();
-  const { causationId, hopCount } = deriveCausation(u?.handling ? { kind: "event", handled: u.handling } : { kind: "request" });
+  const { causationId, hopCount } = deriveCausation(u?.handling ? { kind: "event", handled: u.handling } : u?.queued ? { kind: "queued_job", job: u.queued } : { kind: "request" });
   const carrier: Record<string, string> = {};
   propagation.inject(context.active(), carrier);
   const id = newId();

@@ -30,6 +30,8 @@ export class Unit {
   system: SystemPrincipal | undefined;
   handling: HandledEvent | undefined;
   job: string | undefined;
+  /** the queued job being run: its causation and hop count pass to what it publishes or enqueues (P12.8) */
+  queued: { causationId: string; hopCount: number } | undefined;
   inTx = false;
   /** decides a guard for this request (set by the HTTP layer; used by GraphQL resolvers) */
   authorize: ((guard: string) => Promise<void>) | undefined;

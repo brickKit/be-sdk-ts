@@ -28,6 +28,9 @@ export { Store, Tx, isLockTimeout, isUniqueViolation, type TxOptions, type Isola
 // command idempotency
 export { idempotent, commandKey, fingerprint, type Command, type Prior } from "./idempotency/index.js";
 
+// background work
+export type { Job, Worker, Reconciler, QueuedJob, RunInfo } from "./jobs/types.js";
+
 // events
 export { permanent, PermanentError, type EventInput, type EventsDeclaration, type Subscription, type ConsumedEvent } from "./events/types.js";
 

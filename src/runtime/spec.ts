@@ -4,6 +4,7 @@ import type { Runtime } from "./runtime.js";
 import type { Router } from "../http/router.js";
 import type { EventsDeclaration } from "../events/types.js";
 import type { GrpcRegistrar } from "../grpc/server.js";
+import type { Job, Reconciler, Worker } from "../jobs/types.js";
 
 export interface ComponentSpec {
   /** "erp/sales"; checked against COMPONENT_ID at start (exit 78 when they differ) */
@@ -27,6 +28,10 @@ export interface Module {
   /** system-plane services; the SDK owns the server and its interceptors */
   grpc?: (s: GrpcRegistrar) => void;
   events?: EventsDeclaration;
+  /** background work (P14): every / singleton / cron jobs, queue workers, reconcilers */
+  jobs?: Job[];
+  workers?: Worker[];
+  reconcilers?: Reconciler[];
   /** one-time initialisation, at most 30 s, never a loop (P1.10) */
   start?: (signal: AbortSignal) => Promise<void>;
   stop?: () => Promise<void>;

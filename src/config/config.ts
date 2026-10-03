@@ -121,6 +121,18 @@ export class Config {
     return v === undefined ? def : String(v);
   }
 
+  /** A JSON key's value: already parsed for `format: json` (catalogue keys), parsed here when declared as a plain string. */
+  json<T = unknown>(key: string): T | undefined {
+    const v = this.get(key);
+    if (typeof v !== "string") return v as T | undefined;
+    if (v.trim() === "") return undefined;
+    try {
+      return JSON.parse(v) as T;
+    } catch {
+      throw new ConfigError("CONFIG_INVALID", key, "not JSON");
+    }
+  }
+
   int(key: string, def?: number): number {
     return (this.get(key) as number | undefined) ?? def ?? 0;
   }
@@ -138,10 +150,6 @@ export class Config {
   /** milliseconds */
   durations(key: string): number[] {
     return ((this.get(key) as bigint[] | undefined) ?? []).map(nsToMs);
-  }
-
-  json<T>(key: string): T | undefined {
-    return this.get(key) as T | undefined;
   }
 
   secret(key: string): Secret {

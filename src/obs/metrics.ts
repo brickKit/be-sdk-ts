@@ -37,6 +37,14 @@ function beMetrics(r: Registry) {
     dlqMessages: c("be_dlq_messages_total", "messages dead-lettered", ["subject"]),
     authzBundleAge: g("be_authz_bundle_age_seconds", "age of the loaded authorization bundle"),
     authzDenied: c("be_authz_denied_total", "requests refused by authentication or authorization", ["reason"]),
+    jobRuns: c("be_job_runs_total", "background job runs", ["job", "result"]),
+    jobDuration: h("be_job_duration_seconds", "background job run duration", ["job"]),
+    jobLastSuccess: g("be_job_last_success_timestamp_seconds", "end of the job's last successful run", ["job"]),
+    queueDepth: g("be_queue_depth", "queued jobs by state", ["kind", "state"]),
+    queueOldestAge: g("be_queue_oldest_age_seconds", "age of the oldest ready queued job", ["kind"]),
+    reconcilePending: g("be_reconcile_pending", "items a reconciler is driving", ["name"]),
+    reconcileOldestAge: g("be_reconcile_oldest_age_seconds", "how long the most overdue item has waited", ["name"]),
+    reconcileGiveups: c("be_reconcile_giveups_total", "items a reconciler gave up on", ["name"]),
   };
 }
 

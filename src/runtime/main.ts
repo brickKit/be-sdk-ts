@@ -3,7 +3,7 @@
 // and exits. `runMain` is the same without the process, for tests and for the shell launcher.
 import { resolve } from "node:path";
 import { Config } from "../config/config.js";
-import { ConfigErrors } from "../config/configError.js";
+import { ConfigError, ConfigErrors } from "../config/configError.js";
 import { readManifest, type Manifest } from "../config/manifest.js";
 import { errorFields, newLogger, nowRfc3339Nano } from "../log/logger.js";
 import { ensureEventsAtMigrate } from "../events/migrateStep.js";
@@ -76,14 +76,10 @@ export async function runMain(spec: Spec, io: MainIO): Promise<MainResult> {
   const { manifest, config } = loaded;
   const version = io.env.COMPONENT_VERSION ?? manifest.version;
   const logger = newLogger({ componentId: spec.id, componentVersion: version, level: config.orDefault("LOG_LEVEL", (c) => c.string("LOG_LEVEL", "info")!, "info") as "info", destination: io.stdout });
-  if (cmd.kind === "job") {
-    // P14.8 is optional; jobs arrive with T5 — until then no job name is known
-    logger.error({ job: cmd.name }, "job_unknown");
-    return { exitCode: EXIT.USAGE };
-  }
   if (cmd.kind === "migrate") return migrate(spec, manifest, config, logger, cmd);
   const platform = new Platform(config, logger);
   const member = new Member({ spec, manifest, config, version, logger, platform });
+  if (cmd.kind === "job") return { exitCode: await member.runJob(cmd.name).catch((e) => exitFor(e, logger)) };
   let fatal!: (why: string) => void;
   const fatalP = new Promise<string>((r) => (fatal = r));
   member.onFatal = (why) => {
@@ -93,16 +89,26 @@ export async function runMain(spec: Spec, io: MainIO): Promise<MainResult> {
   try {
     await member.init();
   } catch (e) {
-    logger.error(errorFields(e), "init_failed");
+    const exitCode = exitFor(e, logger);
     await member.stop().catch(() => {});
     await platform.shutdown();
-    return { exitCode: EXIT.FAILED };
+    return { exitCode };
   }
   const baseUrl = await member.listen();
   logger.info({ url: baseUrl }, "serving");
   let stopping: Promise<void> | undefined;
   const stop = () => (stopping ??= member.stop().then(() => platform.shutdown()));
   return { handle: { baseUrl, member, stop, fatal: fatalP } };
+}
+
+/** A configuration problem found while building the member (a schedule, JOBS_OVERRIDES) exits 78, anything else 1. */
+function exitFor(e: unknown, logger: ReturnType<typeof newLogger>): number {
+  if (e instanceof ConfigError) {
+    logger.error({ key: e.key, reason: e.reason, error: e.message }, "config_invalid");
+    return EXIT.CONFIG;
+  }
+  logger.error(errorFields(e), "init_failed");
+  return EXIT.FAILED;
 }
 
 async function migrate(spec: Spec, manifest: Manifest, config: Config, logger: ReturnType<typeof newLogger>, cmd: { direction: "up" | "down" | "status"; count?: number }): Promise<MainResult> {

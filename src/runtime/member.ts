@@ -12,7 +12,10 @@ import { buildGrpcServer, type GrpcServer } from "../grpc/server.js";
 import { GrpcClients } from "../grpc/clients.js";
 import { Store } from "../store/store.js";
 import type { TxExtensions } from "../store/tx.js";
-import { checkDatabase } from "./database.js";
+import { checkDatabase, compareMigrations, imageMigrations } from "./database.js";
+import { businessZone, jobsOverrides } from "../jobs/config.js";
+import { JobsRuntime } from "../jobs/runtime.js";
+import { migrationVersions } from "../store/probe.js";
 import { buildHttpServer, type HttpServer } from "../http/server.js";
 import { errorFields } from "../log/logger.js";
 import { newMemberRegistry, type MemberRegistry } from "../obs/metrics.js";
@@ -49,6 +52,7 @@ export class Member {
   private grpcServer: GrpcServer | undefined;
   private events: EventsRuntime | undefined;
   private poke: PokeSubscriber | undefined | null = null;
+  private jobs: JobsRuntime | undefined;
   /** called when background work finds a fatal condition (P1.8); main exits non-zero */
   onFatal: (why: string) => void = () => {};
 
@@ -106,11 +110,62 @@ export class Member {
   async init(): Promise<void> {
     this.module = await withTimeout(this.spec.create(this.rt), INIT_TIMEOUT_MS, "create");
     this.module.http?.(this.http.router);
+    const jobs = (this.jobs = this.buildJobs(false));
+    // P14.4 (SHOULD): only where the member authorizes at all, so a component without AUTHZ_URL is not held unready
+    if (jobs && this.platform.bundle) this.http.router.get("/_ops/jobs", `${this.id.replace("/", ".")}.ops`, () => jobs.ops());
     if (this.module.grpc) this.mountGrpc(this.module.grpc);
     if (this.http.router.protectedRoutes > 0) this.watchBundle();
     if (this.store) this.watchDatabase(this.store);
     this.startEvents();
+    jobs?.start(this.supervisor);
     if (this.module.start) await withTimeout(this.module.start(this.supervisor.signal), INIT_TIMEOUT_MS, "start");
+  }
+
+  /** The member's background work (P14); a ConfigError for a bad schedule or JOBS_OVERRIDES (exit 78). */
+  private buildJobs(oneShot: boolean): JobsRuntime | undefined {
+    const m = this.module!;
+    if (!this.store) {
+      if ((m.jobs?.length ?? 0) + (m.workers?.length ?? 0) + (m.reconcilers?.length ?? 0) > 0) throw new Error("Module.jobs / workers / reconcilers need a database: declare the db profile (PG_SCHEMA)");
+      return undefined;
+    }
+    const jobs = new JobsRuntime({
+      memberId: this.id, store: this.store, logger: this.logger, metrics: this.metrics, module: m,
+      zone: businessZone(this.config), overrides: jobsOverrides(this.config), oneShot,
+    });
+    jobs.validate();
+    Object.assign(this.txExtensions, jobs.extensions);
+    this.info.capabilities = [...new Set([...this.info.capabilities, "job_run"])];
+    return jobs;
+  }
+
+  /**
+   * `job run <name>` (P14.8): the module is created, nothing is served and no other background work starts; the
+   * schema must match the image; one run through the same tables. Exit code 0 (ran or no-op), 1, 64 or 78.
+   */
+  async runJob(name: string): Promise<number> {
+    try {
+      this.module = await withTimeout(this.spec.create(this.rt), INIT_TIMEOUT_MS, "create");
+      const jobs = this.buildJobs(true);
+      if (!jobs) return (this.logger.error({ job: name }, "job_unknown"), 64);
+      if (this.module.events) this.eventsFor(this.store!);
+      const schema = await this.schemaState(this.store!);
+      if (schema !== "ok") return (this.logger.error({ job: name, schema }, "job_schema_mismatch"), 1);
+      const r = await jobs.runOnce(name, this.supervisor.signal);
+      if (r.result === "unknown") return (this.logger.error({ job: name }, "job_unknown"), 64);
+      if (r.result === "noop") this.logger.info({ job: name, why: r.why }, "job_noop");
+      else if (r.result === "ok") this.logger.info({ job: name }, "job_done");
+      else this.logger.error({ job: name, why: r.why }, "job_failed");
+      return r.result === "failed" ? 1 : 0;
+    } finally {
+      await this.store?.close();
+      await this.telemetry.shutdown();
+      await this.metrics.shutdown();
+    }
+  }
+
+  private async schemaState(store: Store): Promise<string> {
+    const v = await migrationVersions(store);
+    return compareMigrations(v.applied, imageMigrations(this.spec.migrations), v.platform);
   }
 
   private watchBundle(): void {
@@ -156,14 +211,20 @@ export class Member {
     const decl = this.module?.events;
     if (!decl || ((decl.publishes ?? []).length === 0 && (decl.subscribe ?? []).length === 0)) return;
     if (!this.store) throw new Error("Module.events needs a database: declare the db profile (PG_SCHEMA) for the outbox and the cursor");
-    this.events = new EventsRuntime({
-      memberId: this.id, version: this.version, config: this.config, logger: this.logger, metrics: this.metrics, tracer: this.telemetry.tracer,
-      store: this.store, contracts: EventContracts.load(this.spec.contracts), declaration: decl,
-    });
-    Object.assign(this.txExtensions, this.events.extensions);
+    this.events = this.eventsFor(this.store);
     this.events.start(this.supervisor);
     const events = this.events;
     this.onStop(() => events.stop());
+  }
+
+  /** The events runtime with tx.publish wired; started only when serving. */
+  private eventsFor(store: Store): EventsRuntime {
+    const events = new EventsRuntime({
+      memberId: this.id, version: this.version, config: this.config, logger: this.logger, metrics: this.metrics, tracer: this.telemetry.tracer,
+      store, contracts: EventContracts.load(this.spec.contracts), declaration: this.module!.events!,
+    });
+    Object.assign(this.txExtensions, events.extensions);
+    return events;
   }
 
   async listen(port = this.manifest.port): Promise<string> {
