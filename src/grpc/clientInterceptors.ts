@@ -14,6 +14,8 @@ import { localStatus, STATUS_DETAILS_KEY } from "./errors.js";
 export const OUTBOUND_TIMEOUT_MS = 3_000;
 export const DEADLINE_MARGIN_MS = 50;
 export const MAX_CONCURRENT = 64;
+/** An error this close to the end of the budget is the budget's end. */
+export const BUDGET_END_SLACK_MS = 10;
 
 type CallInterface = ReturnType<NextCall>;
 type StatusListener = (status: StatusObject, next: (s: StatusObject) => void) => void;
@@ -60,7 +62,10 @@ function onEnd(next: CallInterface, onStatus: (s: StatusObject) => void): Interc
 
 const toMs = (d: InterceptorOptions["deadline"]): number => (d instanceof Date ? d.getTime() : (d ?? Infinity));
 
-/** P7.7: min(3 s, remaining − 50 ms); never later than a deadline the component set; < 50 ms left → not sent. */
+/**
+ * P7.7: min(3 s, remaining − 50 ms); never later than a deadline the component set; < 50 ms left → not sent;
+ * a call that fails once that budget has ended failed with DEADLINE_BUDGET_EXHAUSTED.
+ */
 export const deadlineInterceptor: Interceptor = (options, next) => {
   const now = Date.now();
   let deadline = Math.min(now + OUTBOUND_TIMEOUT_MS, toMs(options.deadline));
@@ -72,7 +77,14 @@ export const deadlineInterceptor: Interceptor = (options, next) => {
     }
     deadline = Math.min(deadline, unit.deadline - DEADLINE_MARGIN_MS);
   }
-  return new InterceptingCall(next({ ...options, deadline }));
+  // At the end of the budget gRPC does not always report DEADLINE_EXCEEDED: a stream reset at that moment comes
+  // back as CANCELLED, INTERNAL or UNAVAILABLE. The budget ran out either way, so the caller answers 504 and not
+  // 499, 500 or 503. Outermost, so the metrics still count the raw code.
+  const status: StatusListener = (s, pass) => {
+    if (s.code === GrpcStatus.OK || Date.now() < deadline - BUDGET_END_SLACK_MS) return pass(s);
+    pass(localStatus(platformError("DEADLINE_BUDGET_EXHAUSTED", undefined, s.details || "the outbound deadline passed")));
+  };
+  return new InterceptingCall(next({ ...options, deadline }), { start: (md, listener, pass) => pass(md, { onReceiveStatus: status }) });
 };
 
 /** P7.9: a counter per (member, dependency); the 65th concurrent call fails at once and is never queued. */
