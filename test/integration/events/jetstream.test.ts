@@ -71,4 +71,61 @@ describe("JetStreamBus (P12.4, P12.5, P12.13)", () => {
     await loop;
     expect(seen).toEqual([1, 2, 3]);
   });
+
+  it("stops without a pull request left at the server and hands back what it had already been sent (P1.6)", async () => {
+    const stopped = `${seg}.thing.stopped.v1`;
+    const name = `sdktest_bus__${stopped.split(".").join("__")}`;
+    const stream = `BE_${seg.toUpperCase()}`;
+    await bus.ensureStream(stopped);
+    await bus.ensureDurable(name, stopped);
+    const jsm = await jetstreamManager(bus.connection);
+    for (const n of [1, 2, 3, 4]) {
+      const id = `01a0fba0-947b-77cc-9a52-3f1d2e4b5a7${n}`;
+      await bus.publish(stopped, h(id), new TextEncoder().encode("{}"), id);
+    }
+
+    // four are sent for the four free slots; the instance stops while it handles the first
+    const first: number[] = [];
+    const ac = new AbortController();
+    await bus.consume(stopped, name, 4, async (d: Delivery) => {
+      first.push(d.streamSeq);
+      d.ack();
+      ac.abort();
+    }, ac.signal);
+    expect(first).toHaveLength(1);
+    expect((await jsm.consumers.info(stream, name)).num_waiting).toBe(0);
+
+    // the other three were handed back: the next consumer gets them at once, not after ack_wait (30 s)
+    const rest: number[] = [];
+    const again = new AbortController();
+    const started = Date.now();
+    await bus.consume(stopped, name, 4, async (d: Delivery) => {
+      rest.push(d.deliveryCount);
+      d.ack();
+      if (rest.length === 3) again.abort();
+    }, again.signal);
+    expect(rest).toEqual([2, 2, 2]);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it("keeps pulling an idle durable, one bounded request after another, without a failure", async () => {
+    const idle = `${seg}.thing.idle.v1`;
+    const name = `sdktest_bus__${idle.split(".").join("__")}`;
+    await bus.ensureStream(idle);
+    await bus.ensureDurable(name, idle);
+    const ac = new AbortController();
+    let deliveredAt = 0;
+    const loop = bus.consume(idle, name, 4, async (d: Delivery) => {
+      deliveredAt = Date.now();
+      d.ack();
+    }, ac.signal);
+    await new Promise((r) => setTimeout(r, 3_500)); // three requests expire (FETCH_WAIT_MS each)
+    const publishedAt = Date.now();
+    await bus.publish(idle, h("01a0fba0-947b-77cc-9a52-3f1d2e4b5a80"), new TextEncoder().encode("{}"), "01a0fba0-947b-77cc-9a52-3f1d2e4b5a80");
+    await expect.poll(() => deliveredAt, { timeout: 2_000 }).toBeGreaterThan(0);
+    expect(deliveredAt - publishedAt).toBeLessThan(500);
+    ac.abort();
+    await loop;
+    expect(log.lines.filter((l) => l.msg === "consumer_fetch_failed")).toEqual([]);
+  });
 });

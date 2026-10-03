@@ -5,11 +5,12 @@
 import { connect, headers as natsHeaders, nanos, type NatsConnection } from "@nats-io/transport-node";
 import {
   AckPolicy, DeliverPolicy, DiscardPolicy, jetstream, jetstreamManager, StorageType,
-  type ConsumerConfig, type JetStreamClient, type JetStreamManager, type JsMsg,
+  type Consumer, type ConsumerConfig, type JetStreamClient, type JetStreamManager, type JsMsg,
 } from "@nats-io/jetstream";
 import type { Logger } from "pino";
 import { errorFields } from "../../log/logger.js";
 import { DLQ_STREAM, streamFor } from "../names.js";
+import { pullLoop, type PullSource } from "./pull.js";
 
 const DAY_MS = 24 * 3600 * 1000;
 export const ACK_WAIT_MS = 30_000;
@@ -135,28 +136,17 @@ export class JetStreamBus {
 
   /**
    * Pulls from the durable and hands at most `concurrency` messages at a time to `onMessage` until `signal`
-   * aborts; the handler must ack, nak or term each delivery.
+   * aborts; the handler must ack, nak or term each delivery. Returns once the last pull request has ended and
+   * every handler has returned (see pull.ts); a deleted durable or an unavailable bus is retried.
    */
   async consume(subject: string, durable: string, concurrency: number, onMessage: (d: Delivery) => Promise<void>, signal: AbortSignal): Promise<void> {
     const { stream } = streamFor(subject);
-    const consumer = await this.js.consumers.get(stream, durable);
-    const messages = await consumer.consume({ max_messages: concurrency });
-    const stop = () => void messages.stop();
-    signal.addEventListener("abort", stop, { once: true });
-    const inflight = new Set<Promise<void>>();
-    try {
-      for await (const m of messages) {
-        const p = onMessage(toDelivery(m))
-          .catch((e) => this.logger.error(errorFields(e), "consumer_handler_crashed"))
-          .finally(() => inflight.delete(p));
-        inflight.add(p);
-        if (inflight.size >= concurrency) await Promise.race(inflight);
-        if (signal.aborted) break;
-      }
-    } finally {
-      signal.removeEventListener("abort", stop);
-      await Promise.allSettled([...inflight]);
-    }
+    let consumer: Consumer | undefined;
+    const source: PullSource<JsMsg> = {
+      fetch: async (max, expires) => (consumer ??= await this.js.consumers.get(stream, durable)).fetch({ max_messages: max, expires }),
+      forget: () => (consumer = undefined),
+    };
+    await pullLoop(source, (m) => onMessage(toDelivery(m)), { concurrency, signal, logger: this.logger.child({ stream, durable }) });
   }
 
   async close(): Promise<void> {
