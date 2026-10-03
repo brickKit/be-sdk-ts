@@ -1,0 +1,5 @@
+# The migration tool must skip this file (P11.11, r1-06).
+tables:
+  widgets:
+    online: forever
+    then: keep
