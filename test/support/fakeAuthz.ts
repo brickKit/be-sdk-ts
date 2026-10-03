@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 
 export interface FakeAuthz {
   url: string;
+  /** the changefeed GET /authz/v2/changes serves (contract-infra-authz changefeed.schema.json) */
+  changes: { revision: string; op: "upsert" | "delete"; tuple: Record<string, unknown> }[];
   requests: { inm?: string }[];
   setBundle(b: unknown): void;
   down(d: boolean): void;
@@ -21,7 +23,15 @@ export async function fakeAuthz(initial: unknown = bundle({ rep: ["sdktest.basic
   let version = 1;
   let isDown = false;
   const requests: { inm?: string }[] = [];
+  const changes: FakeAuthz["changes"] = [];
   const server = createServer((req, res) => {
+    const u = new URL(req.url ?? "/", "http://x");
+    if (u.pathname === "/authz/v2/changes") {
+      const after = BigInt(u.searchParams.get("after") ?? "0");
+      const page = changes.filter((c) => BigInt(c.revision) > after);
+      const head = changes.at(-1)?.revision ?? "0";
+      return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ changes: page, next: page.at(-1)?.revision ?? String(after), watermark: BigInt(head) > after ? head : String(after) }));
+    }
     if (req.url !== "/authz/v2/bundle") return void res.writeHead(404).end();
     requests.push({ inm: req.headers["if-none-match"] });
     if (isDown) return void res.writeHead(503).end();
@@ -32,6 +42,7 @@ export async function fakeAuthz(initial: unknown = bundle({ rep: ["sdktest.basic
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   return {
     url: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
+    changes,
     requests,
     setBundle(b) {
       body = JSON.stringify(b);

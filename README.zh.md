@@ -45,14 +45,17 @@ main(defineComponent({
 | 进程 | P1.1–P1.8、P1.13 | 启动顺序、`/healthz`、`/readyz`（bundle、`db_identity`、`migrations`，满足后锁定）、SIGTERM 在 `SHUTDOWN_GRACE` 内收尾、后台工作受监督（1 s → 5 min）、双栈监听 |
 | 配置 | P2 | 只读 `configSchema` 里的键，按目录（`schemas/config-keys.yaml`）严格类型，一次报出全部错误，`_FILE` 密钥按修改时间和大小重读，`*_ENDPOINT` 与族地址（`$endpoint:` 的值，不做端口算术）；服务入口从不打开 `PG_OWNER_PASSWORD_FILE` |
 | HTTP | P3.1–P3.6、P3.10、P3.12 | 每个成员一个 Fastify 5 实例；`headersTimeout` 5000 + `connectionsCheckingInterval` 1000、`requestTimeout` 30000、`keepAliveTimeout` 120000、`bodyLimit` 1 MiB、`handlerTimeout` = 路由截止时间，答 504 |
-| 错误 | P4 | problem+json、gRPC 状态码 + `google.rpc` 详情、转述依赖的 reason、`errors-be.yaml` 的 33 个 reason |
-| 身份与授权 | P5、P6.1、P6.2 | JWT（RS256/ES256/EdDSA、`typ=access`、iss/aud/exp/iat/jti、JWKS 缓存）、bundle `authz/2.x`（E1–E5：stale、撤销的授权、委托、有效期、天花板、功能键）、`access().user()` / `.has(k)` |
+| 错误 | P4 | problem+json、gRPC 状态码 + `google.rpc` 详情、转述依赖的 reason、`errors-be.yaml` 的 36 个 reason、依赖不可达统一为 `DEPENDENCY_UNAVAILABLE` 带 `metadata.dependency`、槽位族成员用 `Spec.errorDomain` |
+| 身份与授权 | P5、P6.1–P6.10、P6.12–P6.15 | JWT（RS256/ES256/EdDSA、`typ=access`、iss/aud/exp/iat/jti、JWKS 缓存）、bundle `authz/2.x` 与 `infra.authz.changed.v1` 的 poke、EVALUATION E1–E12（62/62 判定向量）：`access().has` / `.scope(t)`（规范谓词，`sql(cols)` / `branches(cols)`）/ `.can` / `.check(tx, …)`（ACL 投影）/ `.require`（看不见答 404）/ `.explain` / `.mask` / `.checkWritable` / `.checkSortable` / `.rowActions`；`Spec.resources` 建投影、以 `be.authz.changes` 拉取（410 用快照重建）、挂 `_authz/check` 与 `_authz/explain`；`tx.syncRelation` |
 | 系统面 | P7 | 服务端拦截链、从 ts-proto `protoMetadata` 读批量上限、按依赖复用 channel、按 `idempotency_level` 生成重试配置、出站截止时间、64 并发舱壁 |
 | 出站 HTTP | P8 | `rt.userHttp(dep)` 转发调用者的 token；`rt.externalHttp(name)` 不转发任何内部头；事务里两者都拒绝 |
 | 数据库 | P10 | `Store` / `Tx`、`SET LOCAL` 块、`/* be:<schema> */` 前缀加未命名语句、超时、重试、SQLSTATE 映射、成员连接预算、启动探测 |
 | 迁移 | P11.1–P11.3 | 属主登录、按 schema 的锁、状态表 `pgmigrations_<schema>` / `besdk_migrations_<schema>`、平台迁移（参考 DDL）、outbox 分区窗口、流与 durable |
 | 事件 | P12 | outbox、泵（等 PubAck）、JetStream durable 只建不改、运行时侧的重投与死信、聚合流游标、因果与跳数 |
-| 可观测 | P18（部分）、P20 | 每成员一个 TracerProvider、共享导出器、W3C 传播器、带脱敏和 2 KiB 上限的 JSON 日志、带 `component` 的 `be_` 指标、`/_be/info` |
+| 幂等 | P13 | `idempotent(tx, cmd, run)`、`tx.idemClaim/Complete/Release/Lookup`、JCS 指纹、调用方命名空间、30 天有效（`idempotency/` 向量全部通过） |
+| 后台工作 | P14 | `Module.jobs`（every / singleton / cron）、`workers`（队列，`tx.enqueue`）、`reconcilers`；`JOBS_OVERRIDES`、`be.cleanup`、`job run <name>`、`GET _ops/jobs`、P14.3 的指标 |
+| 生命周期 | P16（P0：热 / 温） | `migrations/lifecycle.yaml` v1 与 `DATA_LIFECYCLE`、迁移时建分区窗口（P16.10 命名）、`be.lifecycle`（提前建分区、platform / queue 分区到期、封存与摘要链）、`tx.seal`、`_lifecycle/*`（units、verify、holds；其余答 501） |
+| 可观测 | P18（部分）、P20 | 每成员一个 TracerProvider 和 MeterProvider（`rt.meter` 在 `/metrics` 导出）、共享导出器、W3C 传播器、`service.namespace`、`deployment.environment.name` = `DEPLOY_ENV`、带脱敏和 2 KiB 上限的 JSON 日志、带 `component` 的 `be_` 指标、`/_be/info` |
 | 移动端 BFF | P4.5 | `mountGraphQL`（持久化查询、深度与成本上限）、`guard(key, resolver)`、`createBatchGetLoader` |
 
 ## 迁移目录
@@ -67,7 +70,7 @@ main(defineComponent({
 
 ## 还没做（v0.6.0 的后续任务）
 
-幂等（`idempotent`、`tx.idem*`，P13）；Jobs、Reconciler 与 `job run`（P14）；范围、单条判定、投影与资源契约（P6.3–P6.15）；生命周期引擎与业务表分区窗口（P16）；日历、金额、编号、对象存储、缓存、快照（P11.6–P11.10、P15、P17）；authz 的 poke 订阅（P12.10）；在 `/metrics` 上导出的 OTel MeterProvider（今天 `rt.meter` 是空实现）；PostgreSQL 总线适配器（P12.12）；测试包与外壳启动器（P19）。
+共享（`_shares/*` 在有 provider 的 `WriteTuples` 客户端之前答 501）、一致性令牌 `X-Authz-Revision`（P6.11）、图类型的 `ListObjects`；gRPC 的 `be.lifecycle.v1` 服务与冷层（P16 的 P1–P3）；日历、金额、编号、对象存储、缓存、快照（P11.6–P11.10、P15、P17）；PostgreSQL 总线适配器（P12.12）；测试包与外壳启动器（P19）。
 
 ## 开发
 

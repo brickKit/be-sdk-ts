@@ -7,6 +7,7 @@ import type pg from "pg";
 import type { ZodType } from "zod";
 import type { Unit } from "../context.js";
 import { BeError, platformError } from "../errors/beError.js";
+import { syncRelation } from "../auth/projection.js";
 import { idemClaim, idemComplete, idemLookup, idemRelease, type Command, type Prior } from "../idempotency/store.js";
 import { cancelTargetOf, sendCancel } from "./cancel.js";
 import { lockSql, prefixSql, statementTimeoutSql } from "./sql.js";
@@ -92,6 +93,11 @@ export class Tx {
     const s = this.extensions.seal;
     if (!s) throw platformError("CAPABILITY_UNAVAILABLE", { capability: "lifecycle" }, "this member has no lifecycle.yaml");
     return s(this, table, unit);
+  }
+
+  /** P6.13: replaces the relation group (type, id, relation) this component owns, through the outbox. */
+  syncRelation(rtype: string, id: string, relation: string, subjects: string[], version: bigint): Promise<void> {
+    return syncRelation(this, rtype, id, relation, subjects, version);
   }
 
   /** P13 two-step commands: look up, claim, complete or release an idempotency key in this transaction. */

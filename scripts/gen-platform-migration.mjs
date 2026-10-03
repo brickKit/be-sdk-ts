@@ -5,8 +5,7 @@
 //
 // Left out:
 //   07-authz-projection.sql  created only for components that declare `resources` (P6.12)
-//                            TODO(authz projection task): a separate platform step, run when the member's
-//                            assembly declares resources
+//                            (the migrate step runs it when the spec declares `resources`, src/migrate/run.ts)
 //   be_bus.sql               owned by the project's database initialisation (P12.12), not a component schema
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

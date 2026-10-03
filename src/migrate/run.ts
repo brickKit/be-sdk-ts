@@ -22,6 +22,8 @@ import { sleep } from "../util/sleep.js";
 import { componentStateTable, migrationLockValue, platformStateTable } from "./lockKey.js";
 import { lockHolders, openMigrationSession, takeMigrationLock } from "./session.js";
 import { SQL_ONLY_IGNORE, sqlLoaderStrategies } from "./sqlLoader.js";
+import { readFileSync } from "node:fs";
+import { protocolPath } from "../protocolFiles.js";
 import { ensureLifecycleWindows, ensureOutboxWindow } from "./window.js";
 
 /** The platform migration version this SDK release applies (besdk_platform_version.version). */
@@ -39,6 +41,8 @@ export interface MigrateOptions {
   /** runs after the platform migration, on the owner connection (event streams and durables, P12.4) */
   afterPlatform?: (client: pg.Client) => Promise<void>;
   now?: () => Date;
+  /** the component declares resource types: create the ACL projection tables (P6.12, ddl/07) */
+  authzProjection?: boolean;
   /** first back-off after a lock timeout (default 1 s, doubling) */
   lockRetryBaseMs?: number;
 }
@@ -139,6 +143,7 @@ async function platformState(client: pg.Client, schema: string, o: MigrateOption
     const now = o.now?.() ?? new Date();
     const created = await ensureOutboxWindow(query, now);
     created.push(...(await ensureLifecycleWindows(query, o.migrationsDir, now))); // P16.6: declared tables too
+    if (o.authzProjection) await client.query(readFileSync(protocolPath("ddl/07-authz-projection.sql"), "utf8")); // idempotent DDL
     await client.query("COMMIT");
     return created;
   } catch (e) {

@@ -13,7 +13,10 @@ export { Secret } from "./config/secret.js";
 
 // unit of work, access, errors
 export { deadline, signal, requestId, system, callerOf, type SystemPrincipal } from "./context.js";
-export { access, Access, type User } from "./auth/access.js";
+export { access, Access, Scope, type User } from "./auth/access.js";
+export type { ResourceType, Row, AclRow, Decision, Fact, FieldAccess, ScopeParams } from "./auth/evaluate.js";
+export type { ScopeColumns, SqlFragment } from "./auth/predicate.js";
+export type { RecordLoader } from "./runtime/resources.js";
 export { PUBLIC, AUTHENTICATED, type Guard, type PermKey } from "./auth/guard.js";
 export { BeError, beError, platformError, isBeError, type Violation } from "./errors/beError.js";
 export { DependencyAbsentError, isDependencyAbsent } from "./errors/dependencyAbsent.js";

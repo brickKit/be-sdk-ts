@@ -5,6 +5,8 @@ import type { Router } from "../http/router.js";
 import type { EventsDeclaration } from "../events/types.js";
 import type { GrpcRegistrar } from "../grpc/server.js";
 import type { Job, Reconciler, Worker } from "../jobs/types.js";
+import type { ResourceType } from "../auth/evaluate.js";
+import type { RecordLoader } from "./resources.js";
 
 export interface ComponentSpec {
   /** "erp/sales"; checked against COMPONENT_ID at start (exit 78 when they differ) */
@@ -15,6 +17,11 @@ export interface ComponentSpec {
   contracts?: string;
   /** the domain of the component's own errors; default `id`. A slot-family member gives its family's ID (P4.1) */
   errorDomain?: string;
+  /**
+   * The resource types this component owns (assembly.yaml `resources`, catalogue shape): the migrate step creates
+   * the ACL projection, the runtime pulls it and mounts the resource contract (P6.10, P6.12)
+   */
+  resources?: ResourceType[];
   /** the image's component.yaml; default `component.yaml` in the working directory */
   manifest?: string;
   create: (rt: Runtime) => Promise<Module>;
@@ -30,6 +37,8 @@ export interface Module {
   /** system-plane services; the SDK owns the server and its interceptors */
   grpc?: (s: GrpcRegistrar) => void;
   events?: EventsDeclaration;
+  /** per declared resource type, how to read one record for _authz/check and _authz/explain */
+  records?: Record<string, RecordLoader>;
   /** background work (P14): every / singleton / cron jobs, queue workers, reconcilers */
   jobs?: Job[];
   workers?: Worker[];

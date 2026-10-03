@@ -124,6 +124,7 @@ async function migrate(spec: Spec, manifest: Manifest, config: Config, logger: R
   try {
     const r = await runMigrations({
       memberId: spec.id, config, logger, migrationsDir: resolve(spec.migrations), direction: cmd.direction, count: cmd.count,
+      authzProjection: (spec.resources?.length ?? 0) > 0,
       afterPlatform: () => ensureEventsAtMigrate(spec.id, manifest, config, logger),
     });
     // P1.8: a schema newer than the image is a WARN on the migrate entry point, so a rollback is not blocked

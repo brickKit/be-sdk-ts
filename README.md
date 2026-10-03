@@ -45,14 +45,17 @@ The image's entry points (P1.1): no argument serves; `migrate up | down <n> | st
 | Process | P1.1–P1.8, P1.13 | start order, `/healthz`, `/readyz` (bundle, `db_identity`, `migrations`; latched), SIGTERM drains within `SHUTDOWN_GRACE`, supervised background work (1 s → 5 min), dual-stack listen |
 | Configuration | P2 | only `configSchema` keys, strict types by the catalogue (`schemas/config-keys.yaml`), all errors at once, `_FILE` secrets read and re-read by mtime/size, `*_ENDPOINT` and family addresses (`$endpoint:` values, no port arithmetic); the serve entry point never opens `PG_OWNER_PASSWORD_FILE` |
 | HTTP | P3.1–P3.6, P3.10, P3.12 | one Fastify 5 instance per member; `headersTimeout` 5000 + `connectionsCheckingInterval` 1000, `requestTimeout` 30000, `keepAliveTimeout` 120000, `bodyLimit` 1 MiB, `handlerTimeout` = route deadline answered 504 |
-| Errors | P4 | problem+json, gRPC status + `google.rpc` details, relaying a dependency's reason, the 33 reasons of `errors-be.yaml` |
-| Identity, authorization | P5, P6.1, P6.2 | JWT (RS256/ES256/EdDSA, `typ=access`, iss/aud/exp/iat/jti, JWKS cache), bundle `authz/2.x` (E1–E5: stale, revoked grants, delegation, windows, ceilings, keys), `access().user()` / `.has(k)` |
+| Errors | P4 | problem+json, gRPC status + `google.rpc` details, relaying a dependency's reason, the 36 reasons of `errors-be.yaml`, an unreachable dependency is `DEPENDENCY_UNAVAILABLE` with `metadata.dependency`, `Spec.errorDomain` for a slot-family member |
+| Identity, authorization | P5, P6.1–P6.10, P6.12–P6.15 | JWT (RS256/ES256/EdDSA, `typ=access`, iss/aud/exp/iat/jti, JWKS cache), bundle `authz/2.x` with the poke on `infra.authz.changed.v1`, EVALUATION E1–E12 (62/62 decision vectors): `access().has` / `.scope(t)` (canonical predicate, `sql(cols)` / `branches(cols)`) / `.can` / `.check(tx, …)` (ACL projection) / `.require` (404 for an invisible record) / `.explain` / `.mask` / `.checkWritable` / `.checkSortable` / `.rowActions`; `Spec.resources` creates the projection, pulls it as `be.authz.changes` (410 rebuilds from the snapshot) and mounts `_authz/check` and `_authz/explain`; `tx.syncRelation` |
 | System plane | P7 | server chain, batch limits from ts-proto `protoMetadata`, channel per dependency, retry service config from `idempotency_level`, outbound deadline, bulkhead 64 |
 | Outbound HTTP | P8 | `rt.userHttp(dep)` forwards the caller's token; `rt.externalHttp(name)` forwards nothing internal; both refuse inside a transaction |
 | Database | P10 | `Store` / `Tx`, the `SET LOCAL` block, `/* be:<schema> */` prefix with unnamed statements, timeouts, retries, SQLSTATE mapping, member budget, start-up probe |
 | Migrations | P11.1–P11.3 | owner login, per-schema lock, state tables `pgmigrations_<schema>` / `besdk_migrations_<schema>`, the platform migration (reference DDL), the outbox window, streams and durables |
 | Events | P12 | outbox, pump (PubAck), JetStream durables created never updated, runtime-side redelivery and dead letters, aggregate-stream cursor, causation and hop count |
-| Observability | P18 (partly), P20 | per-member tracer provider over a shared exporter, W3C propagator, JSON logs with redaction and 2 KiB lines, `be_` metrics with `component`, `/_be/info` |
+| Idempotency | P13 | `idempotent(tx, cmd, run)`, `tx.idemClaim/Complete/Release/Lookup`, JCS fingerprint, caller namespaces, 30-day keys (all `idempotency/` vectors) |
+| Background work | P14 | `Module.jobs` (every / singleton / cron), `workers` (queue, `tx.enqueue`), `reconcilers`; `JOBS_OVERRIDES`, `be.cleanup`, `job run <name>`, `GET _ops/jobs`, the P14.3 metrics |
+| Lifecycle | P16 (P0: hot and warm) | `migrations/lifecycle.yaml` v1 and `DATA_LIFECYCLE`, partition windows at migrate (P16.10 names), `be.lifecycle` (ensure ahead, expire platform / queue partitions, seal with the digest chain), `tx.seal`, `_lifecycle/*` (units, verify, holds; the rest 501) |
+| Observability | P18 (partly), P20 | per-member tracer and meter providers (`rt.meter` exported on `/metrics`), shared exporter, W3C propagator, `service.namespace`, `deployment.environment.name` = `DEPLOY_ENV`, JSON logs with redaction and 2 KiB lines, `be_` metrics with `component`, `/_be/info` |
 | Mobile BFF | P4.5 | `mountGraphQL` (persisted operations, depth and cost limits), `guard(key, resolver)`, `createBatchGetLoader` |
 
 ## Migrations directory
@@ -67,7 +70,7 @@ Only `*.sql` files and `lifecycle.yaml`. A file name starts with a number (`0001
 
 ## Not yet (later tasks of v0.6.0)
 
-Idempotency (`idempotent`, `tx.idem*`, P13), jobs and reconcilers and `job run` (P14), scopes, record decisions, projection and the resource contract (P6.3–P6.15), the lifecycle engine and business partition windows (P16), calendar, money, numbering, object storage, caches, snapshots (P11.6–P11.10, P15, P17), the authz poke subscription (P12.10), an OTel MeterProvider exported on `/metrics` (`rt.meter` is a no-op meter today), the PostgreSQL bus adapter (P12.12), the testing package and the shell launcher (P19).
+Shares (`_shares/*` answer 501 until the provider's `WriteTuples` client exists), the consistency token `X-Authz-Revision` (P6.11), graph types' `ListObjects`; the gRPC `be.lifecycle.v1` service and the cold tier (P16 P1–P3); calendar, money, numbering, object storage, caches, snapshots (P11.6–P11.10, P15, P17); the PostgreSQL bus adapter (P12.12); the testing package and the shell launcher (P19).
 
 ## Development
 

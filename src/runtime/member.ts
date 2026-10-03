@@ -17,6 +17,8 @@ import { businessZone, jobsOverrides } from "../jobs/config.js";
 import { JobsRuntime } from "../jobs/runtime.js";
 import type { LifecycleEngine } from "../lifecycle/engine.js";
 import { lifecycleJob, loadLifecycle, mountLifecycle } from "./lifecycle.js";
+import type { Projection } from "../auth/projection.js";
+import { mountResourceContract, projectionFor, projectionJob } from "./resources.js";
 import { migrationVersions } from "../store/probe.js";
 import { buildHttpServer, type HttpServer } from "../http/server.js";
 import { errorFields } from "../log/logger.js";
@@ -56,6 +58,7 @@ export class Member {
   private poke: PokeSubscriber | undefined | null = null;
   private jobs: JobsRuntime | undefined;
   private lifecycle: LifecycleEngine | undefined;
+  private projection: Projection | undefined;
   /** called when background work finds a fatal condition (P1.8); main exits non-zero */
   onFatal: (why: string) => void = () => {};
 
@@ -113,6 +116,7 @@ export class Member {
   async init(): Promise<void> {
     this.module = await withTimeout(this.spec.create(this.rt), INIT_TIMEOUT_MS, "create");
     this.module.http?.(this.http.router);
+    this.mountResources();
     const lc = this.loadLifecycle();
     if (lc && this.platform.bundle) mountLifecycle(this.http.router, this.id, lc);
     const jobs = (this.jobs = this.buildJobs(false));
@@ -136,7 +140,10 @@ export class Member {
     const jobs = new JobsRuntime({
       memberId: this.id, store: this.store, logger: this.logger, metrics: this.metrics, module: m,
       zone: businessZone(this.config), overrides: jobsOverrides(this.config), oneShot,
-      platformJobs: this.lifecycle ? [lifecycleJob(this.lifecycle, (why) => this.onFatal(why))] : [],
+      platformJobs: [
+        ...(this.lifecycle ? [lifecycleJob(this.lifecycle, (why) => this.onFatal(why))] : []),
+        ...(this.projection ? [projectionJob(this.projection)] : []),
+      ],
     });
     jobs.validate();
     Object.assign(this.txExtensions, jobs.extensions);
@@ -168,6 +175,17 @@ export class Member {
       await this.telemetry.shutdown();
       await this.metrics.shutdown();
     }
+  }
+
+  /** Resource types (P6.10, P6.12): the projection, pulled as be.authz.changes and on a poke, and the resource contract. */
+  private mountResources(): void {
+    const types = this.spec.resources ?? [];
+    if (types.length === 0 || !this.store || !this.platform.bundle) return;
+    const authzUrl = this.config.familyAddress("AUTHZ_URL")!;
+    const p = (this.projection = projectionFor(this.store, authzUrl, types, this.logger));
+    let pulling: Promise<void> | undefined;
+    this.pokes()?.on(() => void (pulling ??= p.pull().catch(() => undefined).finally(() => (pulling = undefined))));
+    mountResourceContract(this.http.router, this.store, types, this.module?.records ?? {});
   }
 
   /** The lifecycle engine when the component ships lifecycle.yaml (P16); tx.seal goes to it. */
